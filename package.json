@@ -1,0 +1,21 @@
+{
+  "name": "revolit-platform",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Платформа для сборки корпоративных систем: ядро и продукты на нём",
+  "workspaces": [
+    "core",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @revolit/crm",
+    "build": "npm run build -w @revolit/crm",
+    "start": "npm run start -w @revolit/crm",
+    "schema": "npm run schema -w @revolit/crm",
+    "prisma:generate": "npm run prisma:generate -w @revolit/crm",
+    "prisma:migrate": "npm run prisma:migrate -w @revolit/crm",
+    "prisma:deploy": "npm run prisma:deploy -w @revolit/crm",
+    "prisma:seed": "npm run prisma:seed -w @revolit/crm",
+    "typecheck": "npm run typecheck -w @revolit/crm"
+  }
+}

@@ -1,0 +1,230 @@
+// Программа — отдельная собранная система со своими пользователями, ролями и данными
+model Program {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  roles     Role[]
+  auditLogs AuditLog[]
+  entityTemplates EntityTemplate[]
+  settings        ProgramSettings?
+  entityPresets   EntityTemplatePreset[]
+}
+
+// Роль = рабочее место. Описывается в конструкторе, назначается людям в самой программе.
+model Role {
+  id          String   @id @default(cuid())
+  programId   String
+  program     Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  key         String
+  name        String
+  description String?
+  permissions String[] @default([])
+  // Системные роли нельзя удалить из интерфейса программы
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users UserRole[]
+
+  @@unique([programId, key])
+}
+
+model User {
+  id           String  @id @default(cuid())
+  programId    String
+  program      Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  email        String
+  name         String
+  passwordHash String
+
+  isActive           Boolean @default(true)
+  mustChangePassword Boolean @default(false)
+
+  // Защита от подбора пароля
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  roles       UserRole[]
+  sessions    Session[]
+  loginCodes  LoginCode[]
+  resetTokens PasswordResetToken[]
+
+  @@unique([programId, email])
+}
+
+model UserRole {
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId     String
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@id([userId, roleId])
+}
+
+// Активные сессии. В базе только хеш токена — сам токен живёт лишь в cookie у пользователя.
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  lastSeenAt DateTime @default(now())
+  ip        String?
+  userAgent String?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Одноразовый код второго фактора, отправляемый на почту
+model LoginCode {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Журнал действий: кто, что и когда сделал
+model AuditLog {
+  id         String   @id @default(cuid())
+  programId  String
+  program    Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  userId     String?
+  actorEmail String?
+  action     String
+  target     String?
+  targetId   String?
+  details    Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([programId, createdAt])
+}
+
+// ─── Механизм сущностей ───
+// Расширение на данных: применяется мгновенно, без пересборки (Р-19).
+// Поэтому запись хранится не отдельной таблицей, а строкой с JSON-содержимым.
+
+model EntityTemplate {
+  id         String   @id @default(cuid())
+  programId  String
+  program    Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  // Техническое имя: латиница, используется в адресе раздела
+  key        String
+  name       String
+  namePlural String
+  // Ключ шаблона, из которого создана сущность — нужен только для того, чтобы
+  // связи между шаблонами находили друг друга при создании (Р-29). Дальнейшую
+  // жизнь сущности никак не ограничивает.
+  sourcePresetKey String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  fields  EntityField[]
+  records EntityRecord[]
+
+  @@unique([programId, key])
+}
+
+// Шаблон сущности — готовый набор полей на выбор при создании (Р-29).
+// Хранится как данные, а не в коде — так шаблоны можно редактировать
+// в интерфейсе, тем же приёмом, что и сами сущности (Р-19).
+model EntityTemplatePreset {
+  id         String   @id @default(cuid())
+  programId  String
+  program    Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  key        String
+  name       String
+  namePlural String
+  // Список полей целиком одним полем: у пресета нет ни записей, ни правил
+  // блокировки — хранить его строками, как EntityField, незачем.
+  fields     Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([programId, key])
+}
+
+model EntityField {
+  id         String         @id @default(cuid())
+  templateId String
+  template   EntityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  key        String
+  label      String
+  // text | number | date | select | relation
+  type       String
+  required   Boolean        @default(false)
+  // Для select — { choices: string[] }; для relation — { targetTemplateId: string }
+  options    Json?
+  order      Int            @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@unique([templateId, key])
+}
+
+model EntityRecord {
+  id         String         @id @default(cuid())
+  programId  String
+  templateId String
+  template   EntityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  data       Json
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([templateId, createdAt])
+}
+
+// ─── Настройки программы ───
+// Первый кусочек общих настроек (Р-25): пока только почта. Шаг 8 добавит
+// остальное на ту же таблицу — адрес, оформление, хранилище.
+
+model ProgramSettings {
+  id         String   @id @default(cuid())
+  programId  String   @unique
+  program    Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  mailHost   String?
+  mailPort   Int?
+  mailSecure Boolean  @default(false)
+  mailUser   String?
+  mailPass   String?
+  mailFrom   String?
+  // Адрес, по которому программа доступна извне — для ссылок в письмах (Р-28)
+  appUrl     String?
+  // Лицензионный ключ целиком — подписанные данные, проверяются на лету,
+  // ничего из содержимого отдельно не хранится (Р-30)
+  licenseKey String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

@@ -1,0 +1,39 @@
+name: revolit
+
+services:
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    # Наружу не пробрасывается — снаружи доступ только через https-прокси
+    # перед приложением (терминирует TLS). Внутри сети revolit_net
+    # прокси обращается к контейнеру по имени, порт наружу не нужен.
+    environment:
+      DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db:5432/revolit
+      NODE_ENV: production
+    depends_on:
+      - db
+    networks:
+      - revolit_net
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: revolit
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: revolit
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - revolit_pgdata:/var/lib/postgresql/data
+    networks:
+      - revolit_net
+
+volumes:
+  revolit_pgdata:
+
+networks:
+  revolit_net:
+    name: revolit_net

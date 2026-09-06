@@ -1,0 +1,38 @@
+{
+  "name": "@revolit/crm",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "npm run schema && next build",
+    "start": "next start",
+    "schema": "node scripts/build-schema.js",
+    "prisma:generate": "npm run schema && prisma generate",
+    "prisma:migrate": "npm run schema && prisma migrate dev",
+    "prisma:deploy": "npm run schema && prisma migrate deploy",
+    "prisma:seed": "prisma db seed",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "@revolit/core": "*",
+    "lucide-react": "^0.451.0",
+    "next": "14.2.32",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "prisma": "^5.20.0",
+    "tailwindcss": "^3.4.13",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

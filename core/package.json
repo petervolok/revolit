@@ -1,0 +1,26 @@
+{
+  "name": "@revolit/core",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ядро платформы: оболочка, вход, роли, сотрудники, журнал действий",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.451.0",
+    "nanoid": "^5.0.7",
+    "nodemailer": "^6.9.15",
+    "tailwind-merge": "^2.5.4"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.20.0",
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/nodemailer": "^6.4.16"
+  }
+}

@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --surface: 255 255 255;
+    --surface-muted: 249 250 251;
+    --surface-raised: 255 255 255;
+    --line: 232 234 238;
+    --ink: 24 26 32;
+    --ink-muted: 98 104 118;
+    --ink-faint: 148 155 170;
+    --brand: 79 70 229;
+    --brand-hover: 67 56 202;
+    --brand-soft: 238 238 255;
+    --danger: 220 38 38;
+    --success: 22 163 74;
+  }
+
+  .dark {
+    --surface: 17 18 23;
+    --surface-muted: 22 24 30;
+    --surface-raised: 27 29 36;
+    --line: 44 47 57;
+    --ink: 237 239 244;
+    --ink-muted: 154 160 175;
+    --ink-faint: 108 115 131;
+    --brand: 129 122 246;
+    --brand-hover: 145 139 250;
+    --brand-soft: 39 37 66;
+    --danger: 248 113 113;
+    --success: 74 222 128;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-surface text-ink antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Аккуратный фокус: видимый для клавиатуры, не мешающий при кликах мышью */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand/60 ring-offset-1 ring-offset-surface;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--ink-faint) / 0.35) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--ink-faint) / 0.3);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
