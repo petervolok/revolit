@@ -1,0 +1,283 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2, Plus, Trash2, XCircle } from 'lucide-react';
+import Button from '../ui/Button';
+import Checkbox from '../ui/Checkbox';
+import EmptyState from '../ui/EmptyState';
+import Input from '../ui/Input';
+import Select from '../ui/Select';
+import SlideOver from '../ui/SlideOver';
+import type { ProcessInstanceDef, ProcessInstanceWithHistory, ProcessTemplateDef } from '../processes/types';
+
+const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+export default function ProcessBoardClient({ templateKey }: { templateKey: string }) {
+  const [template, setTemplate] = useState<ProcessTemplateDef | null>(null);
+  const [instances, setInstances] = useState<ProcessInstanceDef[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [banner, setBanner] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+
+  const [creating, setCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const [detail, setDetail] = useState<ProcessInstanceWithHistory | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/processes/${templateKey}/instances`);
+    if (!res.ok) {
+      setTemplate(null);
+      setLoading(false);
+      return;
+    }
+    const body = await res.json();
+    setTemplate(body.template);
+    setInstances(body.instances);
+    setLoading(false);
+  }, [templateKey]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const openDetail = async (id: string) => {
+    const res = await fetch(`/api/process-instances/${id}`);
+    if (res.ok) {
+      setDetail(await res.json());
+      setDetailOpen(true);
+    }
+  };
+
+  const createInstance = async () => {
+    if (!newTitle.trim()) return;
+    setSaving(true);
+    const res = await fetch(`/api/processes/${templateKey}/instances`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setBanner({ tone: 'err', text: body.error ?? 'Не удалось создать дело' });
+      return;
+    }
+    setCreating(false);
+    setNewTitle('');
+    load();
+  };
+
+  const move = async (toStageId: string) => {
+    if (!detail) return;
+    const res = await fetch(`/api/process-instances/${detail.id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toStageId }),
+    });
+    if (res.ok) {
+      await openDetail(detail.id);
+      load();
+    }
+  };
+
+  const toggleItem = async (stageId: string, itemIndex: number, checked: boolean) => {
+    if (!detail) return;
+    const res = await fetch(`/api/process-instances/${detail.id}/checklist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stageId, itemIndex, checked }),
+    });
+    if (res.ok) await openDetail(detail.id);
+  };
+
+  const setStatus = async (status: 'done' | 'cancelled') => {
+    if (!detail) return;
+    const res = await fetch(`/api/process-instances/${detail.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (res.ok) {
+      setDetailOpen(false);
+      setBanner({ tone: 'ok', text: status === 'done' ? 'Дело завершено' : 'Дело отменено' });
+      load();
+    }
+  };
+
+  const removeInstance = async () => {
+    if (!detail || !confirm(`Удалить дело «${detail.title}»?`)) return;
+    const res = await fetch(`/api/process-instances/${detail.id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setDetailOpen(false);
+      setBanner({ tone: 'ok', text: 'Дело удалено' });
+      load();
+    }
+  };
+
+  if (loading) return null;
+  if (!template) {
+    return <EmptyState icon={Trash2} title="Процесс не найден" description="Возможно, он был удалён." />;
+  }
+
+  const active = instances.filter((i) => i.status === 'active');
+  const currentStage = detail ? template.stages.find((s) => s.id === detail.currentStageId) : null;
+
+  return (
+    <div className="mx-auto max-w-6xl">
+      <div className="mb-5 flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-ink">{template.name}</h1>
+        <Button variant="primary" onClick={() => setCreating(true)}>
+          <Plus className="h-4 w-4" /> Добавить дело
+        </Button>
+      </div>
+
+      {banner && (
+        <div
+          className={
+            'mb-4 rounded-lg border px-3.5 py-2.5 text-[13px] ' +
+            (banner.tone === 'ok' ? 'border-line bg-surface-muted text-ink' : 'border-danger/30 bg-danger/5 text-danger')
+          }
+        >
+          {banner.text}
+        </div>
+      )}
+
+      {template.stages.length === 0 && (
+        <EmptyState
+          icon={Plus}
+          title="У процесса нет этапов"
+          description="Добавьте этапы в настройках процесса, чтобы можно было заводить дела."
+        />
+      )}
+
+      {template.stages.length > 0 && (
+        <div className="flex gap-4 overflow-x-auto pb-2">
+          {template.stages.map((stage) => {
+            const cards = active.filter((i) => i.currentStageId === stage.id);
+            return (
+              <div key={stage.id} className="w-72 shrink-0">
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <h2 className="text-[13px] font-semibold text-ink">{stage.name}</h2>
+                  <span className="text-xs text-ink-muted">{cards.length}</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {cards.map((instance) => (
+                    <button
+                      key={instance.id}
+                      onClick={() => openDetail(instance.id)}
+                      className="rounded-lg border border-line bg-surface p-3 text-left transition-colors hover:border-brand/50 hover:bg-surface-muted"
+                    >
+                      <p className="text-[13px] font-medium text-ink">{instance.title}</p>
+                      <p className="mt-1 text-xs text-ink-muted">{dateFormat.format(new Date(instance.createdAt))}</p>
+                    </button>
+                  ))}
+                  {cards.length === 0 && <div className="rounded-lg border border-dashed border-line p-3 text-xs text-ink-faint">Пусто</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <SlideOver
+        open={creating}
+        onClose={() => setCreating(false)}
+        title="Новое дело"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCreating(false)}>
+              Отмена
+            </Button>
+            <Button variant="primary" loading={saving} onClick={createInstance}>
+              Создать
+            </Button>
+          </>
+        }
+      >
+        <Input label="Название" placeholder="Банкет для ООО «Ромашка»" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+      </SlideOver>
+
+      <SlideOver
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        title={detail?.title ?? ''}
+        subtitle={currentStage?.name}
+        width="lg"
+        footer={
+          detail && (
+            <>
+              <Button variant="ghost" onClick={removeInstance}>
+                <Trash2 className="h-4 w-4" /> Удалить
+              </Button>
+              <Button variant="secondary" onClick={() => setStatus('cancelled')}>
+                <XCircle className="h-4 w-4" /> Отменить
+              </Button>
+              <Button variant="primary" onClick={() => setStatus('done')}>
+                <CheckCircle2 className="h-4 w-4" /> Завершить
+              </Button>
+            </>
+          )
+        }
+      >
+        {detail && currentStage && (
+          <div className="flex flex-col gap-5">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-ink">Этап</label>
+              <Select value={currentStage.id} onChange={(e) => move(e.target.value)}>
+                {template.stages.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {currentStage.responsible && (
+              <p className="text-[13px] text-ink-muted">
+                Ответственный: <span className="text-ink">{currentStage.responsible}</span>
+              </p>
+            )}
+
+            {currentStage.regulation && (
+              <div>
+                <h3 className="mb-1.5 text-[13px] font-semibold text-ink">Регламент</h3>
+                <p className="whitespace-pre-line text-[13px] text-ink-muted">{currentStage.regulation}</p>
+              </div>
+            )}
+
+            {currentStage.checklist.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-[13px] font-semibold text-ink">Чек-лист</h3>
+                <div className="flex flex-col gap-1">
+                  {currentStage.checklist.map((item, i) => (
+                    <Checkbox
+                      key={i}
+                      label={item.label}
+                      checked={Boolean(detail.checklistState[currentStage.id]?.[i])}
+                      onChange={(v) => toggleItem(currentStage.id, i, v)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <h3 className="mb-1.5 text-[13px] font-semibold text-ink">История</h3>
+              <div className="flex flex-col gap-1.5">
+                {detail.history.map((h) => (
+                  <p key={h.id} className="text-xs text-ink-muted">
+                    {dateFormat.format(new Date(h.createdAt))} — {h.fromStageId ? 'переход на этап' : 'создано, этап'}{' '}
+                    <span className="text-ink">{template.stages.find((s) => s.id === h.toStageId)?.name ?? '—'}</span>
+                    {h.actorEmail ? ` · ${h.actorEmail}` : ''}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </SlideOver>
+    </div>
+  );
+}

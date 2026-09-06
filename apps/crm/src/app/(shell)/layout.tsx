@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getCurrentProgram, getCurrentUser, hasPermission, listTemplates } from '@revolit/core/server';
+import { getCurrentProgram, getCurrentUser, hasPermission, listProcessTemplates, listTemplates } from '@revolit/core/server';
 import AppChrome from '@/shell/AppChrome';
 import '@/modules';
 
@@ -9,10 +9,15 @@ export default async function ShellLayout({ children }: { children: React.ReactN
 
   const program = await getCurrentProgram();
 
-  // Пункты меню сущностей собираются здесь: они живут в базе, а не в коде
-  // модуля, поэтому реестр вкладов о них не знает — см. core/entities/nav.ts.
+  // Пункты меню сущностей и процессов собираются здесь: они живут в базе,
+  // а не в коде модуля, поэтому реестр вкладов о них не знает —
+  // см. core/entities/nav.ts и core/processes/nav.ts.
   const entityLinks = hasPermission(user, 'entities.manage')
     ? (await listTemplates(user.programId)).map((t) => ({ key: t.key, namePlural: t.namePlural }))
+    : [];
+
+  const processLinks = hasPermission(user, 'processes.manage')
+    ? (await listProcessTemplates(user.programId)).map((p) => ({ key: p.key, name: p.name }))
     : [];
 
   return (
@@ -25,6 +30,7 @@ export default async function ShellLayout({ children }: { children: React.ReactN
       }}
       permissions={user.permissions}
       entityLinks={entityLinks}
+      processLinks={processLinks}
     >
       {children}
     </AppChrome>

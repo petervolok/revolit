@@ -12,6 +12,7 @@ model Program {
   entityTemplates EntityTemplate[]
   settings        ProgramSettings?
   entityPresets   EntityTemplatePreset[]
+  processTemplates ProcessTemplate[]
 }
 
 // Роль = рабочее место. Описывается в конструкторе, назначается людям в самой программе.
@@ -227,4 +228,71 @@ model ProgramSettings {
   licenseKey String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// ─── Конструктор процессов ───
+// Линейная структура, не свободный холст: Процесс → Этапы по порядку.
+// «Блок действия» — пункт чек-листа этапа, не исполняемый код (Р-32).
+
+model ProcessTemplate {
+  id        String   @id @default(cuid())
+  programId String
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stages    ProcessStage[]
+  instances ProcessInstance[]
+
+  @@unique([programId, key])
+}
+
+model ProcessStage {
+  id         String          @id @default(cuid())
+  templateId String
+  template   ProcessTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  order      Int             @default(0)
+  name       String
+  // Кто отвечает за этап — текстом, не ссылка на роль входа (Р-32)
+  responsible String?
+  regulation String?
+  // Список действий этапа: [{ "label": "..." }]
+  checklist  Json            @default("[]")
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+// Дело — экземпляр процесса, проходящий через этапы
+model ProcessInstance {
+  id         String          @id @default(cuid())
+  programId  String
+  templateId String
+  template   ProcessTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  title      String
+  currentStageId String
+  status     String          @default("active") // active | done | cancelled
+  // Отметки по чек-листу: { "<stageId>": { "0": true, "1": false } }
+  checklistState Json        @default("{}")
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  history ProcessHistoryEntry[]
+
+  @@index([templateId, status])
+}
+
+// След перехода дела между этапами — видимая история, не журнал действий
+model ProcessHistoryEntry {
+  id          String          @id @default(cuid())
+  instanceId  String
+  instance    ProcessInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  fromStageId String?
+  toStageId   String
+  actorEmail  String?
+  note        String?
+  createdAt   DateTime        @default(now())
+
+  @@index([instanceId, createdAt])
 }

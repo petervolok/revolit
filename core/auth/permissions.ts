@@ -12,6 +12,8 @@ export const CORE_PERMISSIONS: PermissionContribution[] = [
   // Одно право на всё: конструктора ролей ещё нет, право на конкретную
   // сущность выдавать пока некому — см. Р-20.
   { key: 'entities.manage', label: 'Создание сущностей и работа с их записями', group: 'Данные' },
+  // Тоже одно право на всё, той же причине — см. Р-20
+  { key: 'processes.manage', label: 'Настройка процессов и работа с делами', group: 'Данные' },
 ];
 
 export type CorePermission =
@@ -21,7 +23,8 @@ export type CorePermission =
   | 'roles.manage'
   | 'settings.manage'
   | 'audit.view'
-  | 'entities.manage';
+  | 'entities.manage'
+  | 'processes.manage';
 
 /** Право может прийти как из ядра, так и из модуля */
 export type Permission = CorePermission | (string & {});

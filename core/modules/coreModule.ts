@@ -1,4 +1,4 @@
-import { Boxes, KeyRound, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2 } from 'lucide-react';
+import { Boxes, KeyRound, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2, Workflow } from 'lucide-react';
 import { CORE_PERMISSIONS } from '../auth/permissions';
 import type { ModuleManifest } from './types';
 
@@ -35,6 +35,7 @@ export const coreModule: ModuleManifest = {
         { key: 'general', label: 'Общие настройки', href: '/settings/general', permission: 'settings.manage' },
         { key: 'license', label: 'Лицензия', href: '/settings/license', permission: 'settings.manage' },
         { key: 'updates', label: 'Обновления', href: '/settings/updates', permission: 'settings.manage' },
+        { key: 'processes', label: 'Процессы', href: '/settings/processes', permission: 'processes.manage' },
       ],
     },
     {
@@ -101,6 +102,15 @@ export const coreModule: ModuleManifest = {
       icon: RefreshCw,
       permission: 'settings.manage',
       order: 60,
+    },
+    {
+      key: 'processes',
+      title: 'Процессы',
+      description: 'Этапы, ответственные, чек-листы',
+      href: '/settings/processes',
+      icon: Workflow,
+      permission: 'processes.manage',
+      order: 70,
     },
   ],
 };

@@ -58,3 +58,17 @@ export type {
   PresetFieldOptions,
   EntityPresetDef,
 } from './entities/types';
+
+// Конструктор процессов: описания и сборка пункта меню. Работа с базой — в серверном входе.
+export { buildProcessNavSection } from './processes/nav';
+export type { ProcessNavSource } from './processes/nav';
+export type {
+  ChecklistItem,
+  ChecklistState,
+  ProcessStageDef,
+  ProcessTemplateDef,
+  ProcessInstanceDef,
+  ProcessInstanceWithHistory,
+  ProcessHistoryEntryDef,
+  ProcessInstanceStatus,
+} from './processes/types';

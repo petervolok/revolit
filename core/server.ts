@@ -40,6 +40,27 @@ export {
   deleteRecord,
 } from './entities/service';
 
+// Конструктор процессов
+export {
+  ProcessError,
+  listTemplates as listProcessTemplates,
+  getTemplate as getProcessTemplate,
+  createTemplate as createProcessTemplate,
+  renameTemplate as renameProcessTemplate,
+  deleteTemplate as deleteProcessTemplate,
+  addStage,
+  updateStage,
+  removeStage,
+  reorderStages,
+  listInstances,
+  createInstance,
+  getInstance,
+  moveInstance,
+  setInstanceStatus,
+  toggleChecklistItem,
+  deleteInstance,
+} from './processes/service';
+
 // Лицензия
 export { getLicenseStatus, activateLicense, deactivateLicense, hasFeature, LicenseError } from './licensing/service';
 
