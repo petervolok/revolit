@@ -25,6 +25,10 @@ export default function ProcessBoardClient({ templateKey }: { templateKey: strin
   const [detail, setDetail] = useState<ProcessInstanceWithHistory | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
+  // Перетаскивание карточки между этапами мышью
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const res = await fetch(`/api/processes/${templateKey}/instances`);
     if (!res.ok) {
@@ -69,17 +73,47 @@ export default function ProcessBoardClient({ templateKey }: { templateKey: strin
     load();
   };
 
-  const move = async (toStageId: string) => {
-    if (!detail) return;
-    const res = await fetch(`/api/process-instances/${detail.id}/move`, {
+  /** Общий переход на этап — им пользуются и выбор в карточке, и перетаскивание мышью */
+  const moveInstance = async (instanceId: string, toStageId: string) => {
+    // Оптимистично переносим карточку сразу, не дожидаясь ответа сервера —
+    // перетаскивание иначе ощущается медленным. Полная перезагрузка ниже
+    // всё равно подтверждает итог.
+    setInstances((prev) => prev.map((i) => (i.id === instanceId ? { ...i, currentStageId: toStageId } : i)));
+
+    const res = await fetch(`/api/process-instances/${instanceId}/move`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ toStageId }),
     });
-    if (res.ok) {
-      await openDetail(detail.id);
-      load();
+
+    if (!res.ok) {
+      load(); // откатываем оптимистичное перемещение, если сервер отказал
+      return;
     }
+    if (detail?.id === instanceId) await openDetail(instanceId);
+    load();
+  };
+
+  const move = (toStageId: string) => {
+    if (!detail) return;
+    moveInstance(detail.id, toStageId);
+  };
+
+  const onCardDragStart = (e: React.DragEvent, instanceId: string) => {
+    // Кладём id в dataTransfer, а не только в состояние React: между dragstart
+    // и drop состояние не гарантированно успевает обновиться до срабатывания
+    // обработчика — dataTransfer от такой гонки не зависит.
+    e.dataTransfer.setData('text/plain', instanceId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingId(instanceId);
+  };
+
+  const onColumnDrop = (e: React.DragEvent, stageId: string) => {
+    e.preventDefault();
+    setDragOverStageId(null);
+    const instanceId = e.dataTransfer.getData('text/plain') || draggingId;
+    if (instanceId) moveInstance(instanceId, stageId);
+    setDraggingId(null);
   };
 
   const toggleItem = async (stageId: string, itemIndex: number, checked: boolean) => {
@@ -162,18 +196,40 @@ export default function ProcessBoardClient({ templateKey }: { templateKey: strin
                   <h2 className="text-[13px] font-semibold text-ink">{stage.name}</h2>
                   <span className="text-xs text-ink-muted">{cards.length}</span>
                 </div>
-                <div className="flex flex-col gap-2">
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (dragOverStageId !== stage.id) setDragOverStageId(stage.id);
+                  }}
+                  onDragLeave={() => setDragOverStageId((s) => (s === stage.id ? null : s))}
+                  onDrop={(e) => onColumnDrop(e, stage.id)}
+                  className={
+                    'flex min-h-[64px] flex-col gap-2 rounded-lg p-1 transition-colors ' +
+                    (dragOverStageId === stage.id ? 'bg-brand/5 ring-2 ring-brand/30' : '')
+                  }
+                >
                   {cards.map((instance) => (
-                    <button
+                    <div
                       key={instance.id}
+                      role="button"
+                      tabIndex={0}
+                      draggable
+                      onDragStart={(e) => onCardDragStart(e, instance.id)}
+                      onDragEnd={() => setDraggingId(null)}
                       onClick={() => openDetail(instance.id)}
-                      className="rounded-lg border border-line bg-surface p-3 text-left transition-colors hover:border-brand/50 hover:bg-surface-muted"
+                      onKeyDown={(e) => e.key === 'Enter' && openDetail(instance.id)}
+                      className={
+                        'cursor-grab rounded-lg border border-line bg-surface p-3 text-left transition-colors hover:border-brand/50 hover:bg-surface-muted active:cursor-grabbing ' +
+                        (draggingId === instance.id ? 'opacity-40' : '')
+                      }
                     >
                       <p className="text-[13px] font-medium text-ink">{instance.title}</p>
                       <p className="mt-1 text-xs text-ink-muted">{dateFormat.format(new Date(instance.createdAt))}</p>
-                    </button>
+                    </div>
                   ))}
-                  {cards.length === 0 && <div className="rounded-lg border border-dashed border-line p-3 text-xs text-ink-faint">Пусто</div>}
+                  {cards.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-line p-3 text-xs text-ink-faint">Пусто</div>
+                  )}
                 </div>
               </div>
             );
