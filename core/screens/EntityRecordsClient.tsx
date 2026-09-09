@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { Link2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import Button from '../ui/Button';
 import Checkbox from '../ui/Checkbox';
 import EmptyState from '../ui/EmptyState';
@@ -9,7 +10,11 @@ import Input from '../ui/Input';
 import RowMenu from '../ui/RowMenu';
 import Select from '../ui/Select';
 import SlideOver from '../ui/SlideOver';
+import AttachmentsSection from '../attachments/AttachmentsSection';
+import { recordLabel } from '../entities/types';
 import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef } from '../entities/types';
+import type { LinkedInstanceDef } from '../processes/types';
+import type { TaskDef } from '../tasks/types';
 
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -17,14 +22,6 @@ interface ProgramUser {
   id: string;
   name: string;
   email: string;
-}
-
-/** Запись показывается по первому текстовому полю, иначе — по первому непустому значению */
-function recordLabel(record: EntityRecordDef, fields: EntityFieldDef[]): string {
-  const textField = fields.find((f) => f.type === 'text');
-  if (textField && record.data[textField.key]) return String(record.data[textField.key]);
-  const firstValue = fields.map((f) => record.data[f.key]).find((v) => v !== undefined && v !== null && v !== '');
-  return firstValue !== undefined ? String(firstValue) : `Запись ${record.id.slice(0, 6)}`;
 }
 
 /** Значение поля в форме: текстовые поля — строка, список с несколькими значениями — массив */
@@ -47,6 +44,11 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
   const [form, setForm] = useState<Record<string, FormValue>>({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Дела процессов, заведённые по этой записи — только для чтения здесь (Р-36)
+  const [linkedInstances, setLinkedInstances] = useState<LinkedInstanceDef[]>([]);
+  // Задачи, заведённые по этой записи — тем же приёмом (Р-37)
+  const [linkedTasks, setLinkedTasks] = useState<TaskDef[]>([]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/entities/${templateKey}/records`);
@@ -125,6 +127,8 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
     setForm({});
     setFormError('');
     setFormOpen(true);
+    setLinkedInstances([]);
+    setLinkedTasks([]);
   };
 
   const openEdit = (r: EntityRecordDef) => {
@@ -143,6 +147,14 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
     setForm(values);
     setFormError('');
     setFormOpen(true);
+    setLinkedInstances([]);
+    fetch(`/api/entity-records/${r.id}/instances`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setLinkedInstances);
+    setLinkedTasks([]);
+    fetch(`/api/tasks?entityRecordId=${r.id}&includeDone=1`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setLinkedTasks);
   };
 
   const save = async () => {
@@ -396,6 +408,40 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
             );
           })}
           {formError && <p className="text-xs text-danger">{formError}</p>}
+
+          {editing && linkedInstances.length > 0 && (
+            <div>
+              <h3 className="mb-1.5 text-[13px] font-semibold text-ink">Дела процессов</h3>
+              <div className="flex flex-col gap-1.5">
+                {linkedInstances.map((li) => (
+                  <Link
+                    key={li.id}
+                    href={`/processes/${li.templateKey}`}
+                    className="flex items-center gap-1.5 text-[13px] text-brand hover:underline"
+                  >
+                    <Link2 className="h-3.5 w-3.5 shrink-0" />
+                    {li.title} — {li.templateName} · {li.stageName}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {editing && <AttachmentsSection parent={{ entityRecordId: editing.id }} />}
+
+          {editing && linkedTasks.length > 0 && (
+            <div>
+              <h3 className="mb-1.5 text-[13px] font-semibold text-ink">Задачи</h3>
+              <div className="flex flex-col gap-1">
+                {linkedTasks.map((t) => (
+                  <p key={t.id} className={'text-[13px] ' + (t.status === 'done' ? 'text-ink-faint line-through' : 'text-ink')}>
+                    {t.title}
+                    {t.assignee ? ` · ${t.assignee.name}` : ''}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </SlideOver>
     </div>

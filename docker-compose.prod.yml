@@ -12,8 +12,13 @@ services:
     environment:
       DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db:5432/revolit
       NODE_ENV: production
+      STORAGE_DIR: /app/storage
     depends_on:
       - db
+    # Вложения (Р-38) хранятся на диске сервера через StoragePort — без тома
+    # каждый пересоздание контейнера при обновлении стирало бы все файлы
+    volumes:
+      - revolit_storage:/app/storage
     networks:
       - revolit_net
 
@@ -33,6 +38,7 @@ services:
 
 volumes:
   revolit_pgdata:
+  revolit_storage:
 
 networks:
   revolit_net:

@@ -3,13 +3,15 @@ import { redirect } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 import { getCurrentUser } from '../../auth/session';
 import { getRegistry } from '../../modules/current';
+import { listDisabledModuleKeys } from '../../modules/toggles';
 
 /** Карточки разделов собираются из вкладов подключённых модулей */
 export default async function SettingsIndexScreen() {
   const user = await getCurrentUser();
   if (!user) redirect('/login');
 
-  const available = getRegistry().settings(user.permissions);
+  const disabled = await listDisabledModuleKeys(user.programId);
+  const available = getRegistry().settings(user.permissions, disabled);
   if (available.length === 0) redirect('/home');
 
   return (

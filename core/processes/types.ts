@@ -45,6 +45,20 @@ export interface ProcessInstanceDef {
   checklistState: ChecklistState;
   createdAt: string;
   updatedAt: string;
+  /** Связанная запись сущности (Р-36) — необязательная */
+  entityRecordId: string | null;
+  entityRecordLabel: string | null;
+  entityTemplateKey: string | null;
+}
+
+/** Дело, показанное со стороны сущности — на карточке записи (Р-36) */
+export interface LinkedInstanceDef {
+  id: string;
+  title: string;
+  status: ProcessInstanceStatus;
+  templateKey: string;
+  templateName: string;
+  stageName: string;
 }
 
 export interface ProcessInstanceWithHistory extends ProcessInstanceDef {

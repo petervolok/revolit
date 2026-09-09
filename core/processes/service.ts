@@ -4,10 +4,13 @@
  */
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma';
-import { slugify } from '../entities/types';
+import { toFieldDef } from '../entities/service';
+import { recordLabel, slugify } from '../entities/types';
+import type { EntityRecordDef } from '../entities/types';
 import type {
   ChecklistItem,
   ChecklistState,
+  LinkedInstanceDef,
   ProcessHistoryEntryDef,
   ProcessInstanceDef,
   ProcessInstanceWithHistory,
@@ -177,10 +180,25 @@ export async function reorderStages(
   return getTemplate(programId, templateKey) as Promise<ProcessTemplateDef>;
 }
 
-function toInstanceDef(row: {
-  id: string; templateId: string; title: string; currentStageId: string; status: string;
-  checklistState: unknown; createdAt: Date; updatedAt: Date;
-}): ProcessInstanceDef {
+const INSTANCE_INCLUDE = { entityRecord: { include: { template: { include: { fields: true } } } } } as const;
+
+type InstanceRow = Prisma.ProcessInstanceGetPayload<{ include: typeof INSTANCE_INCLUDE }>;
+
+function toInstanceDef(row: InstanceRow): ProcessInstanceDef {
+  let entityRecordLabel: string | null = null;
+  let entityTemplateKey: string | null = null;
+
+  if (row.entityRecord) {
+    entityTemplateKey = row.entityRecord.template.key;
+    const recordDef: EntityRecordDef = {
+      id: row.entityRecord.id,
+      data: row.entityRecord.data as Record<string, unknown>,
+      createdAt: row.entityRecord.createdAt.toISOString(),
+      updatedAt: row.entityRecord.updatedAt.toISOString(),
+    };
+    entityRecordLabel = recordLabel(recordDef, row.entityRecord.template.fields.map(toFieldDef));
+  }
+
   return {
     id: row.id,
     templateId: row.templateId,
@@ -190,6 +208,9 @@ function toInstanceDef(row: {
     checklistState: (row.checklistState as ChecklistState | null) ?? {},
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    entityRecordId: row.entityRecordId,
+    entityRecordLabel,
+    entityTemplateKey,
   };
 }
 
@@ -200,6 +221,7 @@ export async function listInstances(programId: string, templateKey: string): Pro
   const rows = await prisma.processInstance.findMany({
     where: { templateId: template.id },
     orderBy: { createdAt: 'desc' },
+    include: INSTANCE_INCLUDE,
   });
   return rows.map(toInstanceDef);
 }
@@ -207,16 +229,30 @@ export async function listInstances(programId: string, templateKey: string): Pro
 export async function createInstance(
   programId: string,
   templateKey: string,
-  input: { title: string }
+  input: { title: string; entityRecordId?: string }
 ): Promise<ProcessInstanceDef> {
   const template = await getTemplate(programId, templateKey);
   if (!template) throw new ProcessError('Процесс не найден');
   if (template.stages.length === 0) throw new ProcessError('Сначала добавьте хотя бы один этап');
   if (!input.title?.trim()) throw new ProcessError('Укажите название дела');
 
+  let entityRecordId: string | null = null;
+  if (input.entityRecordId) {
+    const record = await prisma.entityRecord.findFirst({ where: { id: input.entityRecordId, programId } });
+    if (!record) throw new ProcessError('Связанная запись не найдена');
+    entityRecordId = record.id;
+  }
+
   const firstStage = template.stages[0];
   const row = await prisma.processInstance.create({
-    data: { programId, templateId: template.id, title: input.title.trim(), currentStageId: firstStage.id },
+    data: {
+      programId,
+      templateId: template.id,
+      title: input.title.trim(),
+      currentStageId: firstStage.id,
+      entityRecordId,
+    },
+    include: INSTANCE_INCLUDE,
   });
   await prisma.processHistoryEntry.create({
     data: { instanceId: row.id, fromStageId: null, toStageId: firstStage.id },
@@ -225,9 +261,30 @@ export async function createInstance(
 }
 
 async function loadInstance(programId: string, instanceId: string) {
-  const instance = await prisma.processInstance.findFirst({ where: { id: instanceId, programId } });
+  const instance = await prisma.processInstance.findFirst({
+    where: { id: instanceId, programId },
+    include: INSTANCE_INCLUDE,
+  });
   if (!instance) throw new ProcessError('Дело не найдено');
   return instance;
+}
+
+/** Дела, заведённые по конкретной записи сущности — для показа на карточке записи (Р-36) */
+export async function listInstancesForRecord(programId: string, entityRecordId: string): Promise<LinkedInstanceDef[]> {
+  const rows = await prisma.processInstance.findMany({
+    where: { programId, entityRecordId },
+    include: { template: { include: { stages: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    status: row.status as ProcessInstanceDef['status'],
+    templateKey: row.template.key,
+    templateName: row.template.name,
+    stageName: row.template.stages.find((s) => s.id === row.currentStageId)?.name ?? '—',
+  }));
 }
 
 export async function getInstance(programId: string, instanceId: string): Promise<ProcessInstanceWithHistory> {
@@ -265,6 +322,7 @@ export async function moveInstance(
   const updated = await prisma.processInstance.update({
     where: { id: instanceId },
     data: { currentStageId: targetStage.id },
+    include: INSTANCE_INCLUDE,
   });
   await prisma.processHistoryEntry.create({
     data: {
@@ -283,7 +341,7 @@ export async function setInstanceStatus(
   status: 'active' | 'done' | 'cancelled'
 ): Promise<ProcessInstanceDef> {
   await loadInstance(programId, instanceId);
-  const updated = await prisma.processInstance.update({ where: { id: instanceId }, data: { status } });
+  const updated = await prisma.processInstance.update({ where: { id: instanceId }, data: { status }, include: INSTANCE_INCLUDE });
   return toInstanceDef(updated);
 }
 
@@ -301,6 +359,7 @@ export async function toggleChecklistItem(
   const updated = await prisma.processInstance.update({
     where: { id: instanceId },
     data: { checklistState: nextState as unknown as Prisma.InputJsonValue },
+    include: INSTANCE_INCLUDE,
   });
   return toInstanceDef(updated);
 }

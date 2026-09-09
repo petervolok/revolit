@@ -1,4 +1,4 @@
-import { Boxes, KeyRound, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2, Workflow } from 'lucide-react';
+import { Boxes, KeyRound, Puzzle, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2, Workflow } from 'lucide-react';
 import { CORE_PERMISSIONS } from '../auth/permissions';
 import type { ModuleManifest } from './types';
 
@@ -36,6 +36,7 @@ export const coreModule: ModuleManifest = {
         { key: 'license', label: 'Лицензия', href: '/settings/license', permission: 'settings.manage' },
         { key: 'updates', label: 'Обновления', href: '/settings/updates', permission: 'settings.manage' },
         { key: 'processes', label: 'Процессы', href: '/settings/processes', permission: 'processes.manage' },
+        { key: 'plugins', label: 'Плагины', href: '/settings/plugins', permission: 'settings.manage' },
       ],
     },
     {
@@ -111,6 +112,15 @@ export const coreModule: ModuleManifest = {
       icon: Workflow,
       permission: 'processes.manage',
       order: 70,
+    },
+    {
+      key: 'plugins',
+      title: 'Плагины',
+      description: 'Витрина модулей: что уже включено, что можно подключить',
+      href: '/settings/plugins',
+      icon: Puzzle,
+      permission: 'settings.manage',
+      order: 80,
     },
   ],
 };

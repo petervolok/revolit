@@ -1,0 +1,69 @@
+name: CI
+
+# Пока автотестов нет (см. docs/09-conventions.md) — проверяем типы и сборку.
+# Слои unit/integration/e2e добавляются в этот же файл по мере появления
+# (шаги закомментированы ниже — раскомментировать, когда появятся npm-скрипты).
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: revolit
+          POSTGRES_PASSWORD: revolit
+          POSTGRES_DB: revolit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Установка зависимостей
+        run: npm ci
+
+      - name: Схема Prisma
+        run: npm run schema
+
+      - name: Применение миграций к тестовой базе
+        run: npx prisma migrate deploy --schema apps/crm/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+
+      - name: Проверка типов
+        run: npm run typecheck
+
+      # - name: Модульные и интеграционные тесты
+      #   run: npm test
+      #   env:
+      #     DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+
+      - name: Сборка
+        run: npm run build
+
+      # - name: E2E
+      #   run: npm run test:e2e
+
+      - name: Уведомление в Telegram при сбое
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="HTML" \
+            -d text="❌ <b>Revolit CI упал</b>%0Aветка: ${{ github.ref_name }}%0Aкоммит: ${{ github.sha }}%0Aавтор: ${{ github.actor }}%0A${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

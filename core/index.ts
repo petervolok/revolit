@@ -17,6 +17,15 @@ export { createRegistry } from './modules/registry';
 export type { Registry } from './modules/registry';
 export { setRegistry, getRegistry, hasRegistry } from './modules/current';
 export { coreModule, CORE_VERSION } from './modules/coreModule';
+export { aiModule } from './modules/aiModule';
+export { reportsModule } from './modules/reportsModule';
+export { tasksModule } from './modules/tasksModule';
+export { PLUGIN_CATALOG } from './modules/catalog';
+export type { PluginCatalogEntry } from './modules/catalog';
+export type { TaskDef, TaskStatus, TaskUserRef } from './tasks/types';
+export { MAX_ATTACHMENT_SIZE } from './attachments/types';
+export type { AttachmentDef } from './attachments/types';
+export type { DashboardSummary, DashboardEntitySummary, DashboardProcessSummary } from './dashboard/types';
 export type {
   ModuleManifest,
   ModuleContext,
@@ -47,7 +56,7 @@ export type { NavSection, NavItem } from './shell/navModel';
 // Сущности: описания и сборка пункта меню. Работа с базой — в серверном входе.
 export { buildEntityNavSection } from './entities/nav';
 export type { EntityNavSource } from './entities/nav';
-export { slugify, FIELD_TYPE_LABELS } from './entities/types';
+export { slugify, FIELD_TYPE_LABELS, recordLabel } from './entities/types';
 export type {
   FieldType,
   FieldOptions,
@@ -71,4 +80,5 @@ export type {
   ProcessInstanceWithHistory,
   ProcessHistoryEntryDef,
   ProcessInstanceStatus,
+  LinkedInstanceDef,
 } from './processes/types';

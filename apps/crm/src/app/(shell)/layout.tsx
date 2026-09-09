@@ -1,5 +1,12 @@
 import { redirect } from 'next/navigation';
-import { getCurrentProgram, getCurrentUser, hasPermission, listProcessTemplates, listTemplates } from '@revolit/core/server';
+import {
+  getCurrentProgram,
+  getCurrentUser,
+  hasPermission,
+  listDisabledModuleKeys,
+  listProcessTemplates,
+  listTemplates,
+} from '@revolit/core/server';
 import AppChrome from '@/shell/AppChrome';
 import '@/modules';
 
@@ -20,6 +27,8 @@ export default async function ShellLayout({ children }: { children: React.ReactN
     ? (await listProcessTemplates(user.programId)).map((p) => ({ key: p.key, name: p.name }))
     : [];
 
+  const disabledModules = [...(await listDisabledModuleKeys(user.programId))];
+
   return (
     <AppChrome
       programName={program?.name ?? 'Программа'}
@@ -31,6 +40,7 @@ export default async function ShellLayout({ children }: { children: React.ReactN
       permissions={user.permissions}
       entityLinks={entityLinks}
       processLinks={processLinks}
+      disabledModules={disabledModules}
     >
       {children}
     </AppChrome>

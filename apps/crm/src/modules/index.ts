@@ -1,4 +1,4 @@
-import { CORE_VERSION, coreModule, createRegistry, setRegistry } from '@revolit/core';
+import { aiModule, CORE_VERSION, coreModule, createRegistry, reportsModule, setRegistry, tasksModule } from '@revolit/core';
 import { crmModule } from './crmModule';
 
 /**
@@ -8,6 +8,6 @@ import { crmModule } from './crmModule';
  * Файл импортируется страницами и обработчиками запросов, чтобы реестр
  * был собран до первого обращения к нему.
  */
-export const registry = createRegistry([coreModule, crmModule], CORE_VERSION);
+export const registry = createRegistry([coreModule, crmModule, aiModule, reportsModule, tasksModule], CORE_VERSION);
 
 setRegistry(registry);

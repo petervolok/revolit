@@ -13,6 +13,8 @@ interface AppChromeProps {
   entityLinks: EntityNavSource[];
   /** Процессы программы — тем же приёмом, что и сущности */
   processLinks: ProcessNavSource[];
+  /** Ключи модулей, выключенных в «Плагинах» (Р-34) */
+  disabledModules: string[];
 }
 
 /**
@@ -22,8 +24,8 @@ interface AppChromeProps {
  * «Администрированием» — они не проходят через реестр вкладов, так как
  * создаются в интерфейсе, а не в коде.
  */
-export default function AppChrome({ children, programName, user, permissions, entityLinks, processLinks }: AppChromeProps) {
-  const sections = registry.menu(permissions);
+export default function AppChrome({ children, programName, user, permissions, entityLinks, processLinks, disabledModules }: AppChromeProps) {
+  const sections = registry.menu(permissions, new Set(disabledModules));
   const dynamicSections = [buildProcessNavSection(processLinks), buildEntityNavSection(entityLinks)].filter(
     (s): s is NavSection => s !== null
   );

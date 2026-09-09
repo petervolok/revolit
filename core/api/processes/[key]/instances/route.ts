@@ -19,13 +19,16 @@ export async function POST(req: NextRequest, { params }: { params: { key: string
   const guard = await requirePermission('processes.manage');
   if (isDenied(guard)) return guard.response;
 
-  const { title } = await req.json().catch(() => ({}));
+  const { title, entityRecordId } = await req.json().catch(() => ({}));
   if (typeof title !== 'string' || !title.trim()) {
     return NextResponse.json({ error: 'Укажите название дела' }, { status: 400 });
   }
 
   try {
-    const instance = await createInstance(guard.user.programId, params.key, { title });
+    const instance = await createInstance(guard.user.programId, params.key, {
+      title,
+      entityRecordId: typeof entityRecordId === 'string' ? entityRecordId : undefined,
+    });
     return NextResponse.json(instance, { status: 201 });
   } catch (error) {
     if (error instanceof ProcessError) return NextResponse.json({ error: error.message }, { status: 400 });

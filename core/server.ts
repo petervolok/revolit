@@ -59,10 +59,46 @@ export {
   setInstanceStatus,
   toggleChecklistItem,
   deleteInstance,
+  listInstancesForRecord,
 } from './processes/service';
 
 // Лицензия
 export { getLicenseStatus, activateLicense, deactivateLicense, hasFeature, LicenseError } from './licensing/service';
+
+// Витрина плагинов — включение/выключение уже установленных модулей (Р-34)
+export {
+  listDisabledModuleKeys,
+  isModuleEnabled,
+  assertModuleEnabled,
+  setModuleEnabled,
+  ModuleToggleError,
+} from './modules/toggles';
+
+// ИИ-консультант
+export {
+  listAiGroups,
+  createAiGroup,
+  renameAiGroup,
+  deleteAiGroup,
+  setActiveAiGroup,
+  addAiKey,
+  removeAiKey,
+  consult,
+  AiError,
+} from './ai/service';
+
+// Отчёты
+export { listReportableTemplates, getFieldReport, ReportError } from './reports/service';
+
+// Задачи
+export { listTasks, createTask, updateTask, setTaskStatus, deleteTask, TaskError } from './tasks/service';
+
+// Сводка главного экрана
+export { getDashboardSummary } from './dashboard/service';
+
+// Вложения
+export { listAttachments, uploadAttachment, getAttachmentFile, deleteAttachment, AttachmentError } from './attachments/service';
+export type { AttachmentParent } from './attachments/service';
 
 // Каталог шаблонов сущностей
 export {

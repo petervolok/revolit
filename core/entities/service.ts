@@ -14,7 +14,7 @@ import { FIELD_TYPES, slugify } from './types';
 
 export class EntityError extends Error {}
 
-function toFieldDef(row: {
+export function toFieldDef(row: {
   id: string; key: string; label: string; type: string; required: boolean; order: number; options: unknown;
 }): EntityFieldDef {
   return {

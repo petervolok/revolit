@@ -10,10 +10,14 @@ import type {
 export interface Registry {
   modules: ModuleManifest[];
   permissions: PermissionContribution[];
-  /** Разделы меню, отфильтрованные по правам сотрудника */
-  menu(userPermissions: string[]): NavSection[];
-  /** Карточки настроек, отфильтрованные по правам */
-  settings(userPermissions: string[]): SettingsContribution[];
+  /**
+   * Разделы меню, отфильтрованные по правам сотрудника и, если передан набор
+   * выключенных ключей (Р-34), по тому, включён ли приносящий пункт модуль
+   * для программы.
+   */
+  menu(userPermissions: string[], disabledModules?: Set<string>): NavSection[];
+  /** Карточки настроек, тем же приёмом */
+  settings(userPermissions: string[], disabledModules?: Set<string>): SettingsContribution[];
   has(moduleKey: string): boolean;
 }
 
@@ -83,17 +87,18 @@ export function createRegistry(manifests: ModuleManifest[], coreVersion: string)
   }
 
   const permissions = accepted.flatMap((m) => m.permissions ?? []);
-  const menuItems = accepted.flatMap((m) => m.menu ?? []);
-  const settingsItems = accepted.flatMap((m) => m.settings ?? []);
+  const menuItems = accepted.flatMap((m) => (m.menu ?? []).map((item) => ({ ...item, moduleKey: m.key })));
+  const settingsItems = accepted.flatMap((m) => (m.settings ?? []).map((item) => ({ ...item, moduleKey: m.key })));
 
   return {
     modules: accepted,
     permissions,
 
-    menu(userPermissions) {
+    menu(userPermissions, disabledModules) {
       const sections = new Map<string, NavSection & { order: number }>();
 
       for (const item of menuItems) {
+        if (disabledModules?.has(item.moduleKey)) continue;
         if (!allowed(userPermissions, item.permission)) continue;
 
         if (!sections.has(item.section)) {
@@ -125,8 +130,9 @@ export function createRegistry(manifests: ModuleManifest[], coreVersion: string)
         .filter((section) => section.items.length > 0);
     },
 
-    settings(userPermissions) {
+    settings(userPermissions, disabledModules) {
       return settingsItems
+        .filter((item) => !disabledModules?.has(item.moduleKey))
         .filter((item) => allowed(userPermissions, item.permission))
         .sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
     },

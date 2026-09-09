@@ -79,6 +79,14 @@ export interface EntityRecordDef {
   updatedAt: string;
 }
 
+/** Запись показывается по первому текстовому полю, иначе — по первому непустому значению (Р-36) */
+export function recordLabel(record: EntityRecordDef, fields: EntityFieldDef[]): string {
+  const textField = fields.find((f) => f.type === 'text');
+  if (textField && record.data[textField.key]) return String(record.data[textField.key]);
+  const firstValue = fields.map((f) => record.data[f.key]).find((v) => v !== undefined && v !== null && v !== '');
+  return firstValue !== undefined ? String(firstValue) : `Запись ${record.id.slice(0, 6)}`;
+}
+
 /** Техническое имя из названия: латиница, цифры, дефис */
 export function slugify(input: string): string {
   const map: Record<string, string> = {
