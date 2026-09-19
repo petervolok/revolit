@@ -203,6 +203,8 @@ async function main(): Promise<void> {
   a1.proc.kill('SIGTERM');
   await sleep(300);
   console.log(failures === 0 ? '\nВсе проверки шины пройдены' : `\nПРОВАЛЕНО проверок: ${failures}`);
+  // Одна итоговая аннотация GitHub: её видно через публичный API без входа, а на шаг показывается не больше 10
+  console.log(`::${failures === 0 ? 'notice' : 'error'} title=bus-smoke итог::${allLines.join('%0A')}`);
   process.exit(failures === 0 ? 0 : 1);
 }
 
