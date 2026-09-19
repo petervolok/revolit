@@ -18,13 +18,13 @@ import { prisma, runBatch, basePrisma } from '../core/data/prisma';
 const AGENT = path.resolve(__dirname, '../apps/agent/dist/agent.js');
 const PROGRAM = 'smoke';
 let failures = 0;
+const allLines: string[] = [];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function check(name: string, ok: boolean, detail = ''): void {
   const line = `${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`;
   console.log(line);
-  // Аннотация GitHub: результат виден через публичный API check-runs без входа в аккаунт
-  console.log(`::${ok ? 'notice' : 'error'} title=bus-smoke::${line}`);
+  allLines.push(line);
   if (!ok) failures++;
 }
 
