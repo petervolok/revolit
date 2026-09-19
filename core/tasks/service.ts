@@ -5,6 +5,7 @@
  */
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 import { toFieldDef } from '../entities/service';
 import { recordLabel } from '../entities/types';
 import type { EntityRecordDef } from '../entities/types';
@@ -105,6 +106,7 @@ export async function createTask(
 
   const row = await prisma.task.create({
     data: {
+      id: newId(),
       programId,
       title: input.title.trim(),
       description: input.description?.trim() || null,

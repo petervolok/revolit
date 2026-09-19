@@ -5,6 +5,7 @@
  */
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 import { DEFAULT_PRESETS } from './presets';
 import { getTemplate, uniqueKey } from './service';
 import type { EntityPresetDef, EntityTemplateDef, FieldType, PresetFieldDef } from './types';
@@ -39,6 +40,7 @@ export async function listPresets(programId: string): Promise<EntityPresetDef[]>
   if (count === 0) {
     await prisma.entityTemplatePreset.createMany({
       data: DEFAULT_PRESETS.map((p) => ({
+        id: newId(),
         programId,
         key: p.key,
         name: p.name,
@@ -81,6 +83,7 @@ export async function createPreset(
   const key = await uniquePresetKey(programId, name);
   const row = await prisma.entityTemplatePreset.create({
     data: {
+      id: newId(),
       programId,
       key,
       name,
@@ -133,7 +136,7 @@ export async function materializePreset(
 
   const templateKey = await uniqueKey(programId, preset.name);
   const template = await prisma.entityTemplate.create({
-    data: { programId, key: templateKey, name: preset.name, namePlural: preset.namePlural, sourcePresetKey: preset.key },
+    data: { id: newId(), programId, key: templateKey, name: preset.name, namePlural: preset.namePlural, sourcePresetKey: preset.key },
   });
 
   const skippedFields: string[] = [];
@@ -158,6 +161,7 @@ export async function materializePreset(
 
     await prisma.entityField.create({
       data: {
+        id: newId(),
         templateId: template.id,
         key: field.key,
         label: field.label,

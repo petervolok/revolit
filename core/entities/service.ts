@@ -9,6 +9,7 @@
  */
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, FieldOptions, FieldType } from './types';
 import { FIELD_TYPES, slugify } from './types';
 
@@ -80,7 +81,7 @@ export async function createTemplate(
 
   const key = await uniqueKey(programId, name);
   const row = await prisma.entityTemplate.create({
-    data: { programId, key, name, namePlural },
+    data: { id: newId(), programId, key, name, namePlural },
     include: { fields: true },
   });
   return toTemplateDef(row);
@@ -149,6 +150,7 @@ export async function addField(
 
   await prisma.entityField.create({
     data: {
+      id: newId(),
       templateId: template.id,
       key,
       label: input.label.trim(),
@@ -289,7 +291,7 @@ export async function createRecord(
 
   const data = await validateRecordData(programId, template.fields, input);
   const row = await prisma.entityRecord.create({
-    data: { programId, templateId: template.id, data: data as Prisma.InputJsonValue },
+    data: { id: newId(), programId, templateId: template.id, data: data as Prisma.InputJsonValue },
   });
   return { id: row.id, data: row.data as Record<string, unknown>, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
 }

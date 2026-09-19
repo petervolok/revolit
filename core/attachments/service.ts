@@ -5,6 +5,7 @@
  */
 import { randomBytes } from 'crypto';
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 import { getStoragePort } from '../ports/registry';
 import { MAX_ATTACHMENT_SIZE } from './types';
 import type { AttachmentDef } from './types';
@@ -74,6 +75,7 @@ export async function uploadAttachment(
 
   const row = await prisma.attachment.create({
     data: {
+      id: newId(),
       programId,
       storageKey,
       fileName: file.name,

@@ -4,6 +4,7 @@
  */
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 import { toFieldDef } from '../entities/service';
 import { recordLabel, slugify } from '../entities/types';
 import type { EntityRecordDef } from '../entities/types';
@@ -79,7 +80,7 @@ export async function createTemplate(programId: string, input: { name: string })
   if (!name) throw new ProcessError('Укажите название процесса');
 
   const key = await uniqueKey(programId, name);
-  const row = await prisma.processTemplate.create({ data: { programId, key, name }, include: { stages: true } });
+  const row = await prisma.processTemplate.create({ data: { id: newId(), programId, key, name }, include: { stages: true } });
   return toTemplateDef(row);
 }
 
@@ -122,6 +123,7 @@ export async function addStage(
 
   await prisma.processStage.create({
     data: {
+      id: newId(),
       templateId: template.id,
       name: input.name.trim(),
       responsible: input.responsible?.trim() || null,
@@ -246,6 +248,7 @@ export async function createInstance(
   const firstStage = template.stages[0];
   const row = await prisma.processInstance.create({
     data: {
+      id: newId(),
       programId,
       templateId: template.id,
       title: input.title.trim(),
@@ -255,7 +258,7 @@ export async function createInstance(
     include: INSTANCE_INCLUDE,
   });
   await prisma.processHistoryEntry.create({
-    data: { instanceId: row.id, fromStageId: null, toStageId: firstStage.id },
+    data: { id: newId(), instanceId: row.id, fromStageId: null, toStageId: firstStage.id },
   });
   return toInstanceDef(row);
 }
@@ -326,6 +329,7 @@ export async function moveInstance(
   });
   await prisma.processHistoryEntry.create({
     data: {
+      id: newId(),
       instanceId,
       fromStageId: instance.currentStageId,
       toStageId: targetStage.id,
