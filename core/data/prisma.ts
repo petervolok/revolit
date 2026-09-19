@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { coreEvents } from '../events/coreEvents';
+import { deriveDomainEvents, WRITE_OPERATIONS } from './domainEvents';
 import { createLocalDataPort } from './localPort';
 import { dataMode, getBusDataPort, isProxied } from './port';
 import type { DataPort } from './port';
@@ -41,7 +43,27 @@ const intercepting = basePrisma.$extends({
   },
 }) as unknown as PrismaClient;
 
-export const prisma: PrismaClient = dataMode() === 'bus' ? intercepting : basePrisma;
+/**
+ * Режим `direct`: те же вызовы Prisma, но после записи в доменную модель выводятся и
+ * эмитятся доменные события (ТЗ 6). В режиме `bus` событий здесь нет — их публикует агент.
+ */
+const emitting = basePrisma.$extends({
+  query: {
+    $allModels: {
+      async $allOperations({ model, operation, args, query }) {
+        const result = await query(args);
+        if (isProxied(model) && WRITE_OPERATIONS.has(operation)) {
+          for (const e of deriveDomainEvents(model, operation, args, result)) {
+            await coreEvents.emit(e.event, e.payload as never);
+          }
+        }
+        return result;
+      },
+    },
+  },
+}) as unknown as PrismaClient;
+
+export const prisma: PrismaClient = dataMode() === 'bus' ? intercepting : emitting;
 
 /**
  * Пакет операций одним атомарным блоком (ТЗ 3.4). Заменяет `prisma.$transaction([...])`

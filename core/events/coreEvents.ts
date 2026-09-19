@@ -19,6 +19,17 @@ export type CoreEventMap = {
   'auth.logged_in': { programId: string; userId: string; ip?: string };
   'auth.logged_out': { programId: string; userId: string };
   'auth.password_changed': { programId: string; userId: string };
+
+  // Доменные события (переработка ядра, ТЗ 6). Выводятся из записи в БД слоем данных
+  // (core/data/domainEvents.ts) и эмитятся ПОСЛЕ подтверждённой записи. Сейчас, в режиме
+  // `direct`, — самим процессом приложения; в режиме `bus` их должен публиковать агент.
+  'entity.record.created': { programId: string; recordId: string; templateId: string };
+  'entity.record.updated': { programId: string; recordId: string; templateId: string };
+  'entity.record.deleted': { programId: string; recordId: string; templateId?: string };
+  'process.instance.moved': { programId: string; instanceId: string; templateId: string; toStageId: string };
+  'process.instance.statusChanged': { programId: string; instanceId: string; templateId: string; status: string };
+  'task.created': { programId: string; taskId: string };
+  'task.completed': { programId: string; taskId: string };
 };
 
 export const coreEvents = createEventBus<CoreEventMap>();

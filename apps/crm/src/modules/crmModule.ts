@@ -29,5 +29,20 @@ export const crmModule: ModuleManifest = {
     events.on('user.created', ({ email }) => {
       console.log(`[crm] в программе появился сотрудник ${email}`);
     });
+
+    // Диагностика доменных событий: LOG_DOMAIN_EVENTS=1 пишет их в журнал контейнера
+    if (process.env.LOG_DOMAIN_EVENTS === '1') {
+      for (const name of [
+        'entity.record.created',
+        'entity.record.updated',
+        'entity.record.deleted',
+        'process.instance.moved',
+        'process.instance.statusChanged',
+        'task.created',
+        'task.completed',
+      ] as const) {
+        events.on(name, (payload) => console.log(`[события] ${name}`, JSON.stringify(payload)));
+      }
+    }
   },
 };

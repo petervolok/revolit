@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '../../../data/prisma';
+import { basePrisma, prisma } from '../../../data/prisma';
 import { clientIp, userAgent } from '../../../utils/request';
 import { requirePermission, isDenied } from '../../../auth/guard';
 import { writeAudit } from '../../../auth/audit';
@@ -72,9 +72,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       where: { id: { in: nextRoleIds }, programId: guard.user.programId },
       select: { id: true },
     });
-    await prisma.$transaction([
-      prisma.userRole.deleteMany({ where: { userId: user.id } }),
-      prisma.userRole.createMany({
+    await basePrisma.$transaction([
+      basePrisma.userRole.deleteMany({ where: { userId: user.id } }),
+      basePrisma.userRole.createMany({
         data: valid.map((r) => ({ userId: user.id, roleId: r.id })),
       }),
     ]);
