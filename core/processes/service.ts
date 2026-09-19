@@ -3,7 +3,7 @@
  * Этапы по порядку → Дела, проходящие через этапы (Р-32).
  */
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../data/prisma';
+import { prisma, runBatch } from '../data/prisma';
 import { newId } from '../data/ids';
 import { toFieldDef } from '../entities/service';
 import { recordLabel, slugify } from '../entities/types';
@@ -176,8 +176,8 @@ export async function reorderStages(
   if (!template) throw new ProcessError('Процесс не найден');
   if (template.hasInstances) throw new ProcessError('Этапы можно менять, только пока по процессу нет дел');
 
-  await prisma.$transaction(
-    orderedStageIds.map((id, order) => prisma.processStage.update({ where: { id }, data: { order } }))
+  await runBatch(
+    orderedStageIds.map((id, order) => ({ model: 'ProcessStage', operation: 'update', args: { where: { id }, data: { order } } }))
   );
   return getTemplate(programId, templateKey) as Promise<ProcessTemplateDef>;
 }

@@ -8,7 +8,7 @@
  * правка, а пересборка.
  */
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../data/prisma';
+import { prisma, runBatch } from '../data/prisma';
 import { newId } from '../data/ids';
 import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, FieldOptions, FieldType } from './types';
 import { FIELD_TYPES, slugify } from './types';
@@ -204,8 +204,8 @@ export async function reorderFields(
   if (!template) throw new EntityError('Сущность не найдена');
   if (template.hasRecords) throw new EntityError('Поля можно менять, только пока в сущности нет записей');
 
-  await prisma.$transaction(
-    orderedFieldIds.map((id, order) => prisma.entityField.update({ where: { id }, data: { order } }))
+  await runBatch(
+    orderedFieldIds.map((id, order) => ({ model: 'EntityField', operation: 'update', args: { where: { id }, data: { order } } }))
   );
   return getTemplate(programId, templateKey) as Promise<EntityTemplateDef>;
 }
