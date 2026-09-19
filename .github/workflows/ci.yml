@@ -5,7 +5,7 @@ name: CI
 # (шаги закомментированы ниже — раскомментировать, когда появятся npm-скрипты).
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, experiment]
   pull_request:
     branches: [main, master]
 
