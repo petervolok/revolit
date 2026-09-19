@@ -1,10 +1,12 @@
 FROM node:20-alpine AS deps
 RUN apk add --no-cache openssl
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json ./
 COPY core/package.json ./core/
 COPY apps/crm/package.json ./apps/crm/
-RUN npm install
+# По lock-файлу, чтобы образ и CI ставили одни и те же версии. Добавили
+# зависимость — обновить lock (npm install --package-lock-only) и закоммитить.
+RUN npm ci
 
 FROM node:20-alpine AS builder
 RUN apk add --no-cache openssl

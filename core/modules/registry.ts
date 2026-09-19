@@ -97,7 +97,11 @@ export function createRegistry(manifests: ModuleManifest[], coreVersion: string)
     menu(userPermissions, disabledModules) {
       const sections = new Map<string, NavSection & { order: number }>();
 
-      for (const item of menuItems) {
+      // Порядок пунктов — по order (по умолчанию 100); сортировка устойчивая,
+      // поэтому при равных значениях сохраняется порядок модулей в createRegistry
+      const ordered = [...menuItems].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
+
+      for (const item of ordered) {
         if (disabledModules?.has(item.moduleKey)) continue;
         if (!allowed(userPermissions, item.permission)) continue;
 

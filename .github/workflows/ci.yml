@@ -35,11 +35,9 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      # npm install, а не npm ci: как в Dockerfile. package-lock.json устарел
-      # (до перехода на монорепозиторий) и образом не используется — CI должен
-      # проверять то, что реально собирается в образ.
+      # По lock-файлу — так же, как в Dockerfile
       - name: Установка зависимостей
-        run: npm install
+        run: npm ci
 
       - name: Схема Prisma
         run: npm run schema

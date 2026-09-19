@@ -20,6 +20,7 @@ export const crmModule: ModuleManifest = {
       label: 'Главная',
       href: '/home',
       icon: Home,
+      order: 10,
     },
   ],
 
