@@ -21,7 +21,10 @@ let failures = 0;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function check(name: string, ok: boolean, detail = ''): void {
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
+  const line = `${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`;
+  console.log(line);
+  // Аннотация GitHub: результат виден через публичный API check-runs без входа в аккаунт
+  console.log(`::${ok ? 'notice' : 'error'} title=bus-smoke::${line}`);
   if (!ok) failures++;
 }
 
