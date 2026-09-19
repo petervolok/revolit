@@ -6,6 +6,8 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../data/prisma';
 import { newId } from '../data/ids';
+import { resolveUserNames } from '../data/userNames';
+import type { UserNames } from '../data/userNames';
 import { toFieldDef } from '../entities/service';
 import { recordLabel } from '../entities/types';
 import type { EntityRecordDef } from '../entities/types';
@@ -14,15 +16,13 @@ import type { TaskDef, TaskStatus } from './types';
 export class TaskError extends Error {}
 
 const TASK_INCLUDE = {
-  assignee: { select: { id: true, name: true } },
-  createdBy: { select: { id: true, name: true } },
   entityRecord: { include: { template: { include: { fields: true } } } },
   processInstance: { include: { template: true } },
 } as const;
 
 type TaskRow = Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>;
 
-function toTaskDef(row: TaskRow): TaskDef {
+function toTaskDef(row: TaskRow, users: UserNames): TaskDef {
   let entityRecordLabel: string | null = null;
   let entityTemplateKey: string | null = null;
   if (row.entityRecord) {
@@ -43,8 +43,8 @@ function toTaskDef(row: TaskRow): TaskDef {
     status: row.status as TaskStatus,
     dueAt: row.dueAt ? row.dueAt.toISOString() : null,
     doneAt: row.doneAt ? row.doneAt.toISOString() : null,
-    assignee: row.assignee,
-    createdBy: row.createdBy,
+    assignee: (row.assigneeId && users.get(row.assigneeId)) || null,
+    createdBy: (row.createdById && users.get(row.createdById)) || null,
     entityRecordId: row.entityRecordId,
     entityRecordLabel,
     entityTemplateKey,
@@ -54,6 +54,12 @@ function toTaskDef(row: TaskRow): TaskDef {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** Имена исполнителя и автора подставляются отдельным запросом (F2), не include-ом на User */
+async function toTaskDefs(rows: TaskRow[]): Promise<TaskDef[]> {
+  const users = await resolveUserNames(rows.flatMap((r) => [r.assigneeId, r.createdById]));
+  return rows.map((r) => toTaskDef(r, users));
 }
 
 export interface ListTasksFilter {
@@ -75,7 +81,7 @@ export async function listTasks(programId: string, filter: ListTasksFilter = {})
     include: TASK_INCLUDE,
     orderBy: [{ dueAt: 'asc' }, { createdAt: 'desc' }],
   });
-  return rows.map(toTaskDef);
+  return toTaskDefs(rows);
 }
 
 async function requireOwnRecord(programId: string, entityRecordId: string) {
@@ -118,7 +124,7 @@ export async function createTask(
     },
     include: TASK_INCLUDE,
   });
-  return toTaskDef(row);
+  return (await toTaskDefs([row]))[0];
 }
 
 async function requireOwnTask(programId: string, taskId: string) {
@@ -144,7 +150,7 @@ export async function updateTask(
     },
     include: TASK_INCLUDE,
   });
-  return toTaskDef(row);
+  return (await toTaskDefs([row]))[0];
 }
 
 export async function setTaskStatus(programId: string, taskId: string, status: TaskStatus): Promise<TaskDef> {
@@ -154,7 +160,7 @@ export async function setTaskStatus(programId: string, taskId: string, status: T
     data: { status, doneAt: status === 'done' ? new Date() : null },
     include: TASK_INCLUDE,
   });
-  return toTaskDef(row);
+  return (await toTaskDefs([row]))[0];
 }
 
 export async function deleteTask(programId: string, taskId: string): Promise<void> {

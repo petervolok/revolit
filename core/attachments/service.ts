@@ -6,6 +6,8 @@
 import { randomBytes } from 'crypto';
 import { prisma } from '../data/prisma';
 import { newId } from '../data/ids';
+import { resolveUserNames } from '../data/userNames';
+import type { UserNames } from '../data/userNames';
 import { getStoragePort } from '../ports/registry';
 import { MAX_ATTACHMENT_SIZE } from './types';
 import type { AttachmentDef } from './types';
@@ -17,20 +19,16 @@ export type AttachmentParent =
   | { processInstanceId: string }
   | { taskId: string };
 
-function toDef(row: {
-  id: string;
-  fileName: string;
-  mimeType: string;
-  size: number;
-  uploadedBy: { name: string } | null;
-  createdAt: Date;
-}): AttachmentDef {
+function toDef(
+  row: { id: string; fileName: string; mimeType: string; size: number; uploadedById: string | null; createdAt: Date },
+  users: UserNames
+): AttachmentDef {
   return {
     id: row.id,
     fileName: row.fileName,
     mimeType: row.mimeType,
     size: row.size,
-    uploadedByName: row.uploadedBy?.name ?? null,
+    uploadedByName: (row.uploadedById && users.get(row.uploadedById)?.name) || null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -51,10 +49,10 @@ async function requireParentInProgram(programId: string, parent: AttachmentParen
 export async function listAttachments(programId: string, parent: AttachmentParent): Promise<AttachmentDef[]> {
   const rows = await prisma.attachment.findMany({
     where: { programId, ...parent },
-    include: { uploadedBy: { select: { name: true } } },
     orderBy: { createdAt: 'desc' },
   });
-  return rows.map(toDef);
+  const users = await resolveUserNames(rows.map((r) => r.uploadedById));
+  return rows.map((r) => toDef(r, users));
 }
 
 export async function uploadAttachment(
@@ -84,9 +82,8 @@ export async function uploadAttachment(
       uploadedById,
       ...parent,
     },
-    include: { uploadedBy: { select: { name: true } } },
   });
-  return toDef(row);
+  return toDef(row, await resolveUserNames([row.uploadedById]));
 }
 
 export async function getAttachmentFile(
