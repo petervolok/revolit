@@ -1,0 +1,47 @@
+# Режим шины (переработка ядра, ТЗ 3, 5.3): приложение обращается к данным через RabbitMQ,
+# а не напрямую в БД; доменные операции выполняет агент. Накладывается поверх prod-файла:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.bus.yml --env-file .env.prod up -d
+# В .env.prod (на сервере, не в репозитории) должны быть BUS_USER и BUS_PASSWORD.
+# Это агент №1 (приоритет 0) и его шина. Ничего про сервер №2 здесь нет (ТЗ 11b, раздел 1):
+# агент №2 — тот же образ, запущенный на другом сервере со своей БД и бо́льшим AGENT_PRIORITY.
+name: revolit
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${BUS_USER}
+      RABBITMQ_DEFAULT_PASS: ${BUS_PASSWORD}
+      # Сервер небольшой — не даём брокеру занимать больше положенного
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit vm_memory_high_watermark 0.3"
+    volumes:
+      - revolit_bus:/var/lib/rabbitmq
+    networks:
+      - revolit_net
+
+  agent:
+    image: revolit-app:latest
+    restart: unless-stopped
+    command: ["./apps/agent/entrypoint.sh"]
+    environment:
+      DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db:5432/revolit
+      BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
+      AGENT_NAME: agent-1
+      AGENT_PRIORITY: "0"
+      NODE_ENV: production
+    depends_on:
+      - db
+      - rabbitmq
+    networks:
+      - revolit_net
+
+  app:
+    environment:
+      DATA_MODE: bus
+      BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
+    depends_on:
+      - agent
+
+volumes:
+  revolit_bus:

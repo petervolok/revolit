@@ -7,3 +7,4 @@ node_modules
 .env.prod
 *.log
 apps/*/prisma/schema.prisma
+apps/agent/dist

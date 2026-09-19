@@ -59,7 +59,10 @@ export function setBusDataPort(port: DataPort): void {
 
 export function getBusDataPort(): DataPort {
   if (!busPort) {
-    throw new Error('DATA_MODE=bus, но шинный порт данных не подключён (реализуется на этапе 5 — apps/agent)');
+    // Лениво: в режиме `direct` библиотека шины не загружается вообще
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createBusDataPort } = require('../bus/busPort') as typeof import('../bus/busPort');
+    busPort = createBusDataPort();
   }
   return busPort;
 }
