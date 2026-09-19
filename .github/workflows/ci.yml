@@ -49,6 +49,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
+      # Без сгенерированного клиента в типах Prisma нет моделей — typecheck падает
+      - name: Клиент Prisma
+        run: npx prisma generate --schema apps/crm/prisma/schema.prisma
+
       - name: Проверка типов
         run: npm run typecheck
 
