@@ -6,6 +6,7 @@ import { clientIp, userAgent } from '../../../utils/request';
 import { getCurrentUser } from '../../../auth/session';
 import { hashPassword, validatePasswordStrength, verifyPassword } from '../../../auth/crypto';
 import { writeAudit } from '../../../auth/audit';
+import { coreEvents } from '../../../events/coreEvents';
 
 export async function POST(req: NextRequest) {
   const current = await getCurrentUser();
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
     ip: clientIp(req),
     userAgent: userAgent(req),
   });
+
+  await coreEvents.emit('auth.password_changed', { programId: user.programId, userId: user.id });
 
   return NextResponse.json({ ok: true });
 }

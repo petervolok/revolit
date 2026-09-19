@@ -8,6 +8,7 @@ import { clientIp, userAgent } from '../../utils/request';
 import { requirePermission, isDenied } from '../../auth/guard';
 import { generateToken, hashPassword, hashToken } from '../../auth/crypto';
 import { writeAudit } from '../../auth/audit';
+import { coreEvents } from '../../events/coreEvents';
 import { inviteEmail, sendMail } from '../../ports/mail';
 import { randomBytes } from 'crypto';
 
@@ -107,6 +108,13 @@ export async function POST(req: NextRequest) {
     details: { email: user.email },
     ip: clientIp(req),
     userAgent: userAgent(req),
+  });
+
+  await coreEvents.emit('user.created', {
+    programId: program.id,
+    userId: user.id,
+    email: user.email,
+    actorId: guard.user.id,
   });
 
   return NextResponse.json({ id: user.id });

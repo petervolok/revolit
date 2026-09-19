@@ -6,6 +6,7 @@ import { clientIp, userAgent } from '../../utils/request';
 import { requirePermission, isDenied } from '../../auth/guard';
 import { isKnownPermission } from '../../auth/permissions';
 import { writeAudit } from '../../auth/audit';
+import { coreEvents } from '../../events/coreEvents';
 
 export async function GET() {
   const guard = await requirePermission('roles.view');
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
     ip: clientIp(req),
     userAgent: userAgent(req),
   });
+
+  await coreEvents.emit('role.created', { programId: guard.user.programId, roleId: role.id, actorId: guard.user.id });
 
   return NextResponse.json({ id: role.id });
 }

@@ -5,6 +5,7 @@ import { prisma } from '../../../../data/prisma';
 import { clientIp, userAgent } from '../../../../utils/request';
 import { hashPassword, hashToken, validatePasswordStrength } from '../../../../auth/crypto';
 import { writeAudit } from '../../../../auth/audit';
+import { coreEvents } from '../../../../events/coreEvents';
 
 export async function POST(req: NextRequest) {
   const { token, password } = await req.json().catch(() => ({}));
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest) {
     ip: clientIp(req),
     userAgent: userAgent(req),
   });
+
+  await coreEvents.emit('auth.password_changed', { programId: record.user.programId, userId: record.userId });
 
   return NextResponse.json({ ok: true });
 }

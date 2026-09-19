@@ -5,6 +5,7 @@ import { prisma } from '../../../data/prisma';
 import { clientIp, userAgent } from '../../../utils/request';
 import { requirePermission, isDenied } from '../../../auth/guard';
 import { writeAudit } from '../../../auth/audit';
+import { coreEvents } from '../../../events/coreEvents';
 
 /** Не даём администратору отобрать доступ у самого себя или обезглавить программу */
 async function wouldLeaveProgramWithoutAdmin(
@@ -98,6 +99,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     ip: clientIp(req),
     userAgent: userAgent(req),
   });
+
+  const event =
+    nextActive === false ? 'user.deactivated' : nextActive === true && !user.isActive ? 'user.activated' : 'user.updated';
+  await coreEvents.emit(event, { programId: guard.user.programId, userId: user.id, actorId: guard.user.id });
 
   return NextResponse.json({ ok: true });
 }

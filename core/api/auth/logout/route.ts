@@ -5,6 +5,7 @@ import { prisma } from '../../../data/prisma';
 import { clientIp, userAgent } from '../../../utils/request';
 import { destroySession } from '../../../auth/session';
 import { writeAudit } from '../../../auth/audit';
+import { coreEvents } from '../../../events/coreEvents';
 
 export async function POST(req: NextRequest) {
   const userId = await destroySession();
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
         ip: clientIp(req),
         userAgent: userAgent(req),
       });
+      await coreEvents.emit('auth.logged_out', { programId: user.programId, userId: user.id });
     }
   }
 

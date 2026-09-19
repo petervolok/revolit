@@ -6,6 +6,7 @@ import { clientIp, userAgent } from '../../../utils/request';
 import { requirePermission, isDenied } from '../../../auth/guard';
 import { isKnownPermission } from '../../../auth/permissions';
 import { writeAudit } from '../../../auth/audit';
+import { coreEvents } from '../../../events/coreEvents';
 
 function sanitizePermissions(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
@@ -52,6 +53,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     userAgent: userAgent(req),
   });
 
+  await coreEvents.emit('role.updated', { programId: guard.user.programId, roleId: role.id, actorId: guard.user.id });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -87,6 +90,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     ip: clientIp(req),
     userAgent: userAgent(req),
   });
+
+  await coreEvents.emit('role.deleted', { programId: guard.user.programId, roleId: role.id, actorId: guard.user.id });
 
   return NextResponse.json({ ok: true });
 }

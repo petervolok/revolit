@@ -7,6 +7,7 @@ import { SECURITY } from '../../../auth/config';
 import { hashToken, safeEqual } from '../../../auth/crypto';
 import { createSession } from '../../../auth/session';
 import { writeAudit } from '../../../auth/audit';
+import { coreEvents } from '../../../events/coreEvents';
 
 export async function POST(req: NextRequest) {
   const { challengeId, code } = await req.json().catch(() => ({}));
@@ -84,6 +85,8 @@ export async function POST(req: NextRequest) {
     ip,
     userAgent: ua,
   });
+
+  await coreEvents.emit('auth.logged_in', { programId: challenge.user.programId, userId: challenge.userId, ip });
 
   return NextResponse.json({ ok: true });
 }
