@@ -47,6 +47,18 @@ jobs:
         env:
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
+      # Схема и миграции не должны расходиться: иначе следующая `migrate dev`
+      # молча породит «исправляющую» миграцию. Проверка ловит ошибку в миграции,
+      # написанной вручную (например, с переносом данных).
+      - name: Схема и миграции согласованы
+        run: |
+          PGPASSWORD=revolit psql -h localhost -U revolit -d revolit -c 'CREATE DATABASE shadow'
+          npx prisma migrate diff \
+            --from-migrations apps/crm/prisma/migrations \
+            --to-schema-datamodel apps/crm/prisma/schema.prisma \
+            --shadow-database-url postgresql://revolit:revolit@localhost:5432/shadow \
+            --exit-code
+
       # Без сгенерированного клиента в типах Prisma нет моделей — typecheck падает
       - name: Клиент Prisma
         run: npx prisma generate --schema apps/crm/prisma/schema.prisma
