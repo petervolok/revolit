@@ -96,6 +96,10 @@ export { listTasks, createTask, updateTask, setTaskStatus, deleteTask, TaskError
 // Сводка главного экрана
 export { getDashboardSummary } from './dashboard/service';
 
+// Расписание
+export { listJobs, upsertJob, ensureJob, deleteJob, SchedulerError } from './scheduler/service';
+export type { ScheduledJobDef } from './scheduler/service';
+
 // Вложения
 export { listAttachments, uploadAttachment, getAttachmentFile, deleteAttachment, AttachmentError } from './attachments/service';
 export type { AttachmentParent } from './attachments/service';

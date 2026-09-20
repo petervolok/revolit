@@ -12,7 +12,8 @@ import * as amqp from 'amqplib';
 import type { ConsumeMessage } from 'amqplib';
 import { BUS, fromBuffer, toBuffer } from '../../../core/bus/protocol';
 import type { BusRequest } from '../../../core/bus/protocol';
-import { localDataPort } from '../../../core/data/prisma';
+import { basePrisma, localDataPort } from '../../../core/data/prisma';
+import { startScheduler } from '../../../core/scheduler/runner';
 import { dataMode } from '../../../core/data/port';
 import { handleRequest } from './handler';
 
@@ -87,9 +88,27 @@ async function main(): Promise<void> {
 
   log(`готов: очередь ${BUS.operationsQueue}, приоритет ${priority}, prefetch ${prefetch}`);
 
+  // Планировщик (ТЗ 7) запускается ТОЛЬКО на одном агенте — том, у которого в БД лежит ScheduledJob
+  // (агент №1: это учётная модель, в БД №2 её нет). Два раннера дали бы двойные срабатывания.
+  let stopScheduler: () => void = () => undefined;
+  if (process.env.SCHEDULER_ENABLED === '1') {
+    stopScheduler = startScheduler({
+      client: basePrisma,
+      tickMs: Number(process.env.SCHEDULER_TICK_MS) || 30_000,
+      // Часовой пояс расписания: сдвиг от UTC в минутах (Москва — 180)
+      offsetMinutes: Number(process.env.SCHEDULER_UTC_OFFSET_MINUTES) || 0,
+      log,
+      emit: (fired) => {
+        channel.publish(BUS.eventsExchange, '', toBuffer({ event: 'scheduler.job.fired', payload: fired }));
+      },
+    });
+    log('планировщик включён');
+  }
+
   // Штатная остановка: закрываем канал и соединение, чтобы брокер сразу передал поток другому потребителю
   const shutdown = async () => {
     log('остановка');
+    stopScheduler();
     connection.removeAllListeners('close');
     await channel.close().catch(() => undefined);
     await connection.close().catch(() => undefined);

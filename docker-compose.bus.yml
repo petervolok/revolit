@@ -29,6 +29,9 @@ services:
       BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
       AGENT_NAME: agent-1
       AGENT_PRIORITY: "0"
+      # Планировщик — только на агенте №1: ScheduledJob лежит в БД №1 (ТЗ 7)
+      SCHEDULER_ENABLED: "1"
+      SCHEDULER_UTC_OFFSET_MINUTES: "${SCHEDULER_UTC_OFFSET_MINUTES:-0}"
       NODE_ENV: production
     depends_on:
       - db

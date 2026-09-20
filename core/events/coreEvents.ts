@@ -30,6 +30,10 @@ export type CoreEventMap = {
   'process.instance.statusChanged': { programId: string; instanceId: string; templateId: string; status: string };
   'task.created': { programId: string; taskId: string };
   'task.completed': { programId: string; taskId: string };
+
+  // Расписание (ТЗ 7): раннер агента публикует момент срабатывания задачи. Плагин подписывается
+  // и фильтрует по jobKey. Срабатывания не догоняются, доставка «не больше одного раза» (см. scheduler/runner.ts).
+  'scheduler.job.fired': { programId: string; jobKey: string; scheduledFor: string };
 };
 
 export const coreEvents = createEventBus<CoreEventMap>();

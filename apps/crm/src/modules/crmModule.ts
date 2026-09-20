@@ -40,6 +40,7 @@ export const crmModule: ModuleManifest = {
         'process.instance.statusChanged',
         'task.created',
         'task.completed',
+        'scheduler.job.fired',
       ] as const) {
         events.on(name, (payload) => console.log(`[события] ${name}`, JSON.stringify(payload)));
       }
