@@ -198,10 +198,6 @@ model EntityRecord {
   templateId String
   template   EntityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   data       Json
-  // Признак чувствительности (ТЗ переработки ядра, 4.2): вычисляет агент по
-  // SensitivityRule при создании/изменении записи; по JSON `data` фильтровать
-  // в репликации нельзя, поэтому признак вынесен в отдельное поле
-  sensitive  Boolean        @default(false)
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 
@@ -425,25 +421,6 @@ model Attachment {
   @@index([entityRecordId])
   @@index([processInstanceId])
   @@index([taskId])
-}
-
-// ─── Правила чувствительности ───
-// Конфигурация, а не код (ТЗ переработки ядра, 4.1): директор меняет правила без
-// участия разработчика. Условия — JSON вида [{ "field": "...", "op": "eq", "value": ... }];
-// запись чувствительна, если выполняются ВСЕ условия хотя бы одного включённого правила
-// её сущности. programId — без @relation, как у моделей плагинов (см. 10-plugin-authoring.md).
-
-model SensitivityRule {
-  id          String   @id @default(cuid())
-  programId   String
-  templateKey String
-  name        String
-  conditions  Json
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([programId, templateKey])
 }
 
 // ─── Фоновые задачи ───

@@ -1,0 +1,37 @@
+# Образ сервера №2. НЕ используется docker-compose.prod.yml / docker-compose.bus.yml —
+# те собирают только сервер №1 (Dockerfile), который про существование этого файла
+# и о apps/agent2 ничего не знает (docs/08-decisions.md, Р-41; docs/11b, раздел 1).
+#
+# Собирается и разворачивается отдельно, на сервере №2:
+#   docker build -f Dockerfile.agent2 -t revolit-agent2:latest .
+FROM node:20-alpine AS deps
+RUN apk add --no-cache openssl
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY core/package.json ./core/
+COPY apps/crm/package.json ./apps/crm/
+RUN npm ci
+
+FROM node:20-alpine AS builder
+RUN apk add --no-cache openssl
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# Схема сервера №1 (общие доменные и учётные таблицы) — тот же клиент, что использует ядро
+RUN npm run schema && npx prisma generate --schema apps/crm/prisma/schema.prisma
+# Приватная схема чувствительности — только здесь
+RUN node apps/agent2/scripts/build-schema.js && npx prisma generate --schema apps/agent2/prisma/schema.prisma
+RUN npx tsc -p apps/agent2 --noEmit
+
+FROM node:20-alpine AS runner
+RUN apk add --no-cache openssl
+WORKDIR /app
+ENV NODE_ENV=production
+RUN npm install -g prisma@5.22.0
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/core ./core
+COPY --from=builder /app/apps/agent ./apps/agent
+COPY --from=builder /app/apps/agent2 ./apps/agent2
+COPY --from=builder /app/apps/crm/prisma ./apps/crm/prisma
+RUN chmod +x apps/agent2/entrypoint.sh
+CMD ["./apps/agent2/entrypoint.sh"]

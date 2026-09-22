@@ -8,3 +8,5 @@ node_modules
 *.log
 apps/*/prisma/schema.prisma
 apps/agent/dist
+apps/agent2/dist
+apps/agent2/prisma/generated

@@ -1,0 +1,22 @@
+// ─── Правило чувствительности ───
+// Существует ТОЛЬКО в этой сборке (сервер №2). В core.prisma, который собирается
+// в образ сервера №1, этой модели нет и не будет — это и есть отсутствие следа
+// (см. docs/11b, раздел 1; docs/08-decisions.md, Р-41).
+//
+// Директор меняет правила без участия разработчика. Условия — JSON вида
+// [{ "field": "...", "op": "eq", "value": ... }]; запись чувствительна, если
+// выполняются ВСЕ условия хотя бы одного включённого правила её сущности.
+// programId — без @relation, тем же приёмом, что и у моделей плагинов.
+
+model SensitivityRule {
+  id          String   @id @default(cuid())
+  programId   String
+  templateKey String
+  name        String
+  conditions  Json
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([programId, templateKey])
+}

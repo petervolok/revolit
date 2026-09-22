@@ -75,6 +75,18 @@ jobs:
       - name: Клиент Prisma
         run: npx prisma generate --schema apps/crm/prisma/schema.prisma
 
+      # Главное условие ТЗ архитектуры двух серверов (docs/11b, раздел 1): в коде и в схеме
+      # сервера №1 не должно быть НИ ЕДИНОГО следа механизма сокрытия. Он живёт только
+      # в отдельной сборке agent2 (сервер №2). Проверяем всё, что попадает в образ сервера №1.
+      - name: Нет следов сокрытия данных в коде сервера №1
+        run: |
+          if grep -rlni "sensitiv" core apps/agent apps/crm/src apps/crm/prisma Dockerfile docker-compose.prod.yml docker-compose.bus.yml \
+            --include='*.ts' --include='*.tsx' --include='*.prisma' --include='*.sql' --include='Dockerfile' --include='*.yml' 2>/dev/null | grep -v node_modules; then
+            echo "Найден след механизма сокрытия данных в поставке сервера №1 — см. строки выше" >&2
+            exit 1
+          fi
+          echo "Чисто: в core, apps/agent, apps/crm и файлах развёртывания сервера №1 нет ни одного упоминания"
+
       - name: Проверка типов
         run: npm run typecheck
 
@@ -97,6 +109,24 @@ jobs:
         env:
           DATA_MODE: bus
           BUS_URL: amqp://revolit:revolit@localhost:5672
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+
+      # Отдельная сборка сервера №2 (docs/08-decisions.md Р-41) — своя схема, свой клиент,
+      # своя таблица SensitivityRule. Проверяется отдельно от основной сборки, не входит в неё.
+      - name: Схема и клиент agent2
+        run: |
+          node apps/agent2/scripts/build-schema.js
+          npx prisma generate --schema apps/agent2/prisma/schema.prisma
+          npx prisma migrate deploy --schema apps/agent2/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+
+      - name: Проверка типов agent2
+        run: npx tsc -p apps/agent2
+
+      - name: Проверка логики чувствительности (только сборка сервера №2)
+        run: npx tsx tools/agent2-smoke.ts
+        env:
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
       # - name: Модульные и интеграционные тесты
