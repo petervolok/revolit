@@ -8,6 +8,7 @@
  * чтобы конкретно в этом файле было видно и проверяемо: логика чувствительности не течёт
  * обратно в apps/agent, которым собирается сервер №1).
  */
+import type { PrismaClient } from '@prisma/client';
 import * as amqp from 'amqplib';
 import type { ConsumeMessage } from 'amqplib';
 import { BUS, fromBuffer, toBuffer } from '../../../core/bus/protocol';
@@ -18,13 +19,21 @@ import { handleRequest } from '../../agent/src/handler';
 import { createPrimaryClient, db2 } from './client';
 import { captureBeforeState, shouldMirrorToPrimary } from './dualWrite';
 
+/**
+ * `createLocalDataPort` типизирован по клиенту apps/crm (`@prisma/client`) — единственному,
+ * который знает основной код (core/agent). Клиент agent2 (`./client`) собран из другой,
+ * но структурно совместимой схемы (свой генератор, ТЗ 4.1) — приводим тип только здесь,
+ * на границе, где это доказуемо безопасно (обе схемы включают одни и те же доменные модели).
+ */
+const asPortClient = (client: unknown): PrismaClient => client as PrismaClient;
+
 const name = process.env.AGENT_NAME ?? 'agent-2';
 const log = (message: string) => console.log(`[${name}] ${message}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const localPort = createLocalDataPort(db2);
+const localPort = createLocalDataPort(asPortClient(db2));
 const primaryClient = createPrimaryClient();
-const primaryPort = primaryClient ? createLocalDataPort(primaryClient) : null;
+const primaryPort = primaryClient ? createLocalDataPort(asPortClient(primaryClient)) : null;
 
 if (!primaryPort) {
   log('DATABASE_URL_PRIMARY не задан — дублирование в БД №1 выключено, работаю только со своей БД');
