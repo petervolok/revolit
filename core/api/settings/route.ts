@@ -25,6 +25,7 @@ export async function GET() {
     mailUser: settings?.mailUser ?? '',
     mailFrom: settings?.mailFrom ?? '',
     mailPassSet: Boolean(settings?.mailPass),
+    twoFactorEnabled: settings?.twoFactorEnabled ?? false,
   });
 }
 
@@ -33,18 +34,28 @@ export async function PATCH(req: NextRequest) {
   if (isDenied(guard)) return guard.response;
 
   const body = await req.json().catch(() => ({}));
-  const { programName, appUrl, mailHost, mailPort, mailSecure, mailUser, mailPass, mailFrom } = body ?? {};
+  const { programName, appUrl, mailHost, mailPort, mailSecure, mailUser, mailPass, mailFrom, twoFactorEnabled } = body ?? {};
 
   if (typeof programName !== 'string' || !programName.trim()) {
     return NextResponse.json({ error: 'Укажите название программы' }, { status: 400 });
+  }
+
+  const existing = await prisma.programSettings.findUnique({ where: { programId: guard.user.programId } });
+
+  // Код входа уходит письмом: без почтового сервера включать нельзя — иначе никто не сможет войти
+  const nextTwoFactor = typeof twoFactorEnabled === 'boolean' ? twoFactorEnabled : existing?.twoFactorEnabled ?? false;
+  const hasMail = (typeof mailHost === 'string' && mailHost.trim() !== '') || Boolean(process.env.MAIL_HOST);
+  if (nextTwoFactor && !hasMail) {
+    return NextResponse.json(
+      { error: 'Подтверждение входа кодом нельзя включить без почтового сервера — код не дойдёт. Сначала укажите почту.' },
+      { status: 400 }
+    );
   }
 
   await prisma.program.update({
     where: { id: guard.user.programId },
     data: { name: programName.trim() },
   });
-
-  const existing = await prisma.programSettings.findUnique({ where: { programId: guard.user.programId } });
 
   // Пустое поле пароля означает «оставить как есть», а не «стереть» —
   // иначе поле нельзя было бы показать пустым без потери уже заданного пароля.
@@ -61,6 +72,7 @@ export async function PATCH(req: NextRequest) {
       mailUser: typeof mailUser === 'string' && mailUser.trim() ? mailUser.trim() : null,
       mailPass: nextMailPass,
       mailFrom: typeof mailFrom === 'string' && mailFrom.trim() ? mailFrom.trim() : null,
+      twoFactorEnabled: nextTwoFactor,
     },
     update: {
       appUrl: typeof appUrl === 'string' && appUrl.trim() ? appUrl.trim() : null,
@@ -70,6 +82,7 @@ export async function PATCH(req: NextRequest) {
       mailUser: typeof mailUser === 'string' && mailUser.trim() ? mailUser.trim() : null,
       mailPass: nextMailPass,
       mailFrom: typeof mailFrom === 'string' && mailFrom.trim() ? mailFrom.trim() : null,
+      twoFactorEnabled: nextTwoFactor,
     },
   });
 

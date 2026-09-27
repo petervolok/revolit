@@ -234,6 +234,9 @@ model ProgramSettings {
   // базы, чтобы не тащить обязательную связь в обе стороны; принадлежность
   // группы той же программе проверяется в сервисе
   activeAiGroupId String?
+  // Подтверждение входа кодом из письма. По умолчанию выключено: без настроенной
+  // почты код не дойдёт. Включается в настройках после указания почтового сервера.
+  twoFactorEnabled Boolean @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }

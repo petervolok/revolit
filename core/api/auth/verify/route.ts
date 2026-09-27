@@ -5,9 +5,8 @@ import { prisma } from '../../../data/prisma';
 import { clientIp, userAgent } from '../../../utils/request';
 import { SECURITY } from '../../../auth/config';
 import { hashToken, safeEqual } from '../../../auth/crypto';
-import { createSession } from '../../../auth/session';
+import { completeLogin } from '../../../auth/completeLogin';
 import { writeAudit } from '../../../auth/audit';
-import { coreEvents } from '../../../events/coreEvents';
 
 export async function POST(req: NextRequest) {
   const { challengeId, code } = await req.json().catch(() => ({}));
@@ -70,23 +69,13 @@ export async function POST(req: NextRequest) {
     data: { consumedAt: new Date() },
   });
 
-  await createSession(challenge.userId, { ip, userAgent: ua });
-
-  await prisma.user.update({
-    where: { id: challenge.userId },
-    data: { lastLoginAt: new Date() },
-  });
-
-  await writeAudit({
-    programId: challenge.user.programId,
+  await completeLogin({
     userId: challenge.userId,
-    actorEmail: challenge.user.email,
-    action: 'auth.login.success',
+    programId: challenge.user.programId,
+    email: challenge.user.email,
     ip,
     userAgent: ua,
   });
-
-  await coreEvents.emit('auth.logged_in', { programId: challenge.user.programId, userId: challenge.userId, ip });
 
   return NextResponse.json({ ok: true });
 }

@@ -8,6 +8,7 @@ import { clientIp, userAgent } from '../../../utils/request';
 import { SECURITY } from '../../../auth/config';
 import { generateLoginCode, hashPassword, hashToken, verifyPassword } from '../../../auth/crypto';
 import { writeAudit } from '../../../auth/audit';
+import { completeLogin } from '../../../auth/completeLogin';
 import { loginCodeEmail, sendMail } from '../../../ports/mail';
 
 // Единый ответ на неверные данные: не раскрываем, существует ли такая учётная запись
@@ -97,6 +98,13 @@ export async function POST(req: NextRequest) {
     where: { id: user.id },
     data: { failedAttempts: 0, lockedUntil: null },
   });
+
+  // Второй фактор — настройка программы; по умолчанию выключен (без почты код не дойдёт)
+  const settings = await prisma.programSettings.findUnique({ where: { programId: program.id } });
+  if (!settings?.twoFactorEnabled) {
+    await completeLogin({ userId: user.id, programId: program.id, email: user.email, ip, userAgent: ua });
+    return NextResponse.json({ ok: true });
+  }
 
   // Прошлые неиспользованные коды гасим, чтобы действовал только последний
   await prisma.loginCode.updateMany({

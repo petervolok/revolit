@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { prisma } from '../data/prisma';
 import { generateToken, hashToken } from './crypto';
 import { SECURITY, SESSION_COOKIE } from './config';
@@ -21,7 +21,9 @@ export async function createSession(
   cookies().set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // Secure-куку браузер не сохраняет по обычному http — вход «молча» не срабатывал.
+    // За https-прокси (X-Forwarded-Proto) кука по-прежнему только защищённая.
+    secure: process.env.NODE_ENV === 'production' && headers().get('x-forwarded-proto') === 'https',
     path: '/',
     expires: expiresAt,
   });

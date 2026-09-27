@@ -40,6 +40,12 @@ function LoginForm() {
         setError(data.error || 'Не удалось войти');
         return;
       }
+      // Второй фактор выключен — сессия уже создана
+      if (data.ok) {
+        router.push(nextUrl);
+        router.refresh();
+        return;
+      }
       setChallengeId(data.challengeId);
       setMaskedEmail(data.maskedEmail || email);
       setCode('');

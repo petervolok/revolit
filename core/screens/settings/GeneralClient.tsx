@@ -15,6 +15,7 @@ interface Settings {
   mailUser: string;
   mailFrom: string;
   mailPassSet: boolean;
+  twoFactorEnabled: boolean;
 }
 
 const EMPTY: Settings = {
@@ -26,6 +27,7 @@ const EMPTY: Settings = {
   mailUser: '',
   mailFrom: '',
   mailPassSet: false,
+  twoFactorEnabled: false,
 };
 
 export default function GeneralClient() {
@@ -165,6 +167,22 @@ export default function GeneralClient() {
               <Send className="h-4 w-4" /> Отправить тестовое письмо
             </Button>
           </div>
+        </div>
+      </section>
+
+      <section className="mb-6">
+        <h2 className="mb-3 text-[13px] font-semibold text-ink">Безопасность</h2>
+        <div className="rounded-xl border border-line p-4">
+          <Checkbox
+            checked={data.twoFactorEnabled}
+            onChange={(v) => set('twoFactorEnabled', v)}
+            label="Подтверждать вход кодом из письма"
+          />
+          <p className="mt-2 text-[13px] text-ink-muted">
+            {data.mailHost
+              ? 'Перед включением отправьте тестовое письмо и убедитесь, что оно приходит: код входа отправляется на почту сотрудника.'
+              : 'Доступно после настройки почты — код входа отправляется письмом.'}
+          </p>
         </div>
       </section>
 
