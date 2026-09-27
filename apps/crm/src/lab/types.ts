@@ -19,13 +19,15 @@ export interface Project {
   screens: Screen[];
 }
 
-export type FieldType = 'text' | 'number' | 'percent' | 'currency' | 'select' | 'bool' | 'date' | 'password';
+export type FieldType = 'text' | 'number' | 'percent' | 'currency' | 'select' | 'bool' | 'date' | 'password' | 'relation';
 
 export interface FieldDef {
   key: string;
   label: string;
   type: FieldType;
   options?: string[];
+  /** Для связи: ключ сущности, на которую она ведёт */
+  target?: string;
   /** Вычисляемое поле: в форме редактирования не показывается */
   computed?: boolean;
 }
@@ -33,6 +35,9 @@ export interface FieldDef {
 export interface EntityDef {
   key: string;
   name: string;
+  namePlural: string;
+  /** Живые данные с биржи: в Revolit не хранятся, остаются демонстрационными */
+  virtual?: boolean;
   titleField: string;
   fields: FieldDef[];
 }

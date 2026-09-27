@@ -29,6 +29,34 @@ function Diagnostics() {
   );
 }
 
+function ModeBanner() {
+  const { mode, liveStatus, deploy } = useLab();
+  const box = 'rounded-xl border border-line bg-surface p-3 text-sm';
+  if (mode === 'loading') return <div className={`${box} text-ink-faint`}>Проверяю подключение к данным Revolit…</div>;
+  if (mode === 'live') {
+    return <div className={`${box} text-success`}>Данные из Revolit: экраны читают и пишут настоящие записи в базе (позиции с биржи остаются демонстрационными).</div>;
+  }
+  if (liveStatus === 'notdeployed') {
+    return (
+      <div className={`${box} flex flex-wrap items-center justify-between gap-3`}>
+        <span className="text-ink-muted">Вы вошли, но сущности проекта ещё не созданы. Сейчас показаны демо-данные в памяти.</span>
+        <button onClick={deploy} className="h-9 rounded-lg bg-brand px-3.5 text-sm font-medium text-white hover:bg-brand-hover">
+          Развернуть «Торговый бот» в Revolit
+        </button>
+      </div>
+    );
+  }
+  if (liveStatus === 'noauth') {
+    return (
+      <div className={`${box} text-ink-muted`}>
+        Демо-режим: данные в памяти, после перезагрузки сбрасываются.{' '}
+        <a className="font-medium text-brand hover:underline" href="/login?next=/lab">Войдите как администратор</a>, чтобы работать с настоящими данными Revolit.
+      </div>
+    );
+  }
+  return <div className={`${box} text-danger`}>Не удалось связаться с Revolit — показаны демо-данные.</div>;
+}
+
 function Toasts() {
   const { toasts } = useLab();
   if (!toasts.length) return null;
@@ -72,6 +100,7 @@ export default function LabApp() {
             <h1 className="text-xl font-semibold text-ink">{PROJECT.name}</h1>
             <p className="mt-1 max-w-3xl text-sm text-ink-muted">{PROJECT.domain}</p>
           </header>
+          <ModeBanner />
           <Diagnostics />
           <Screens />
         </div>

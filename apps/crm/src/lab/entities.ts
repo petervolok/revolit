@@ -5,6 +5,7 @@ export const ENTITIES: Record<string, EntityDef> = {
   Strategy: {
     key: 'Strategy',
     name: 'Стратегия',
+    namePlural: 'Стратегии',
     titleField: 'name',
     fields: [
       { key: 'name', label: 'Название', type: 'text' },
@@ -21,6 +22,8 @@ export const ENTITIES: Record<string, EntityDef> = {
   Position: {
     key: 'Position',
     name: 'Позиция',
+    namePlural: 'Позиции',
+    virtual: true,
     titleField: 'symbol',
     fields: [
       { key: 'symbol', label: 'Символ', type: 'text' },
@@ -38,6 +41,7 @@ export const ENTITIES: Record<string, EntityDef> = {
   Plant: {
     key: 'Plant',
     name: 'Растение',
+    namePlural: 'Растения',
     titleField: 'name',
     fields: [
       { key: 'name', label: 'Имя', type: 'text' },
@@ -51,8 +55,10 @@ export const ENTITIES: Record<string, EntityDef> = {
   PlantRun: {
     key: 'PlantRun',
     name: 'Попытка мутации',
+    namePlural: 'Попытки мутаций',
     titleField: 'gene_key',
     fields: [
+      { key: 'plantId', label: 'Растение', type: 'relation', target: 'Plant' },
       { key: 'try_no', label: '№', type: 'number' },
       { key: 'gene_key', label: 'Ген', type: 'text' },
       { key: 'old_value', label: 'Было', type: 'number' },
@@ -65,6 +71,7 @@ export const ENTITIES: Record<string, EntityDef> = {
   Champion: {
     key: 'Champion',
     name: 'Чемпион',
+    namePlural: 'Чемпионы',
     titleField: 'name',
     fields: [
       { key: 'name', label: 'Имя', type: 'text' },
@@ -79,6 +86,7 @@ export const ENTITIES: Record<string, EntityDef> = {
   Dataset: {
     key: 'Dataset',
     name: 'Датасет',
+    namePlural: 'Датасеты',
     titleField: 'symbol',
     fields: [
       { key: 'symbol', label: 'Символ', type: 'text' },
