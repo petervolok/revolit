@@ -1,5 +1,6 @@
 'use client';
 
+import { Blocks } from 'lucide-react';
 import { AppShell, buildEntityNavSection, buildProcessNavSection, type EntityNavSource, type ProcessNavSource } from '@revolit/core';
 import type { NavSection } from '@revolit/core';
 import { registry } from '@/modules';
@@ -15,6 +16,8 @@ interface AppChromeProps {
   processLinks: ProcessNavSource[];
   /** Ключи модулей, выключенных в «Плагинах» (Р-34) */
   disabledModules: string[];
+  /** Лаборатория кубиков — уже отфильтровано по правам и переменной окружения на сервере */
+  labEnabled: boolean;
 }
 
 /**
@@ -24,9 +27,12 @@ interface AppChromeProps {
  * «Администрированием» — они не проходят через реестр вкладов, так как
  * создаются в интерфейсе, а не в коде.
  */
-export default function AppChrome({ children, programName, user, permissions, entityLinks, processLinks, disabledModules }: AppChromeProps) {
+export default function AppChrome({ children, programName, user, permissions, entityLinks, processLinks, disabledModules, labEnabled }: AppChromeProps) {
   const sections = registry.menu(permissions, new Set(disabledModules));
-  const dynamicSections = [buildProcessNavSection(processLinks), buildEntityNavSection(entityLinks)].filter(
+  const labSection: NavSection | null = labEnabled
+    ? { key: 'lab', title: 'Конструктор', items: [{ key: 'lab', label: 'Торговый бот (кубики)', href: '/lab', icon: Blocks }] }
+    : null;
+  const dynamicSections = [buildProcessNavSection(processLinks), buildEntityNavSection(entityLinks), labSection].filter(
     (s): s is NavSection => s !== null
   );
 

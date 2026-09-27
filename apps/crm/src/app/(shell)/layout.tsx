@@ -29,6 +29,10 @@ export default async function ShellLayout({ children }: { children: React.ReactN
 
   const disabledModules = [...(await listDisabledModuleKeys(user.programId))];
 
+  // Лаборатория кубиков (docs/12-template-constructor-progress.md) — не часть обычной
+  // поставки, пункт меню виден только когда явно включена переменной окружения.
+  const labEnabled = process.env.LAB_ENABLED === '1' && hasPermission(user, 'entities.manage');
+
   return (
     <AppChrome
       programName={program?.name ?? 'Программа'}
@@ -41,6 +45,7 @@ export default async function ShellLayout({ children }: { children: React.ReactN
       entityLinks={entityLinks}
       processLinks={processLinks}
       disabledModules={disabledModules}
+      labEnabled={labEnabled}
     >
       {children}
     </AppChrome>

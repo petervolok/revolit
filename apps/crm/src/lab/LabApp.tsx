@@ -39,22 +39,14 @@ function ModeBanner() {
   if (liveStatus === 'notdeployed') {
     return (
       <div className={`${box} flex flex-wrap items-center justify-between gap-3`}>
-        <span className="text-ink-muted">Вы вошли, но сущности проекта ещё не созданы. Сейчас показаны демо-данные в памяти.</span>
+        <span className="text-ink-muted">Сущности проекта ещё не созданы. Сейчас показаны демо-данные в памяти.</span>
         <button onClick={deploy} className="h-9 rounded-lg bg-brand px-3.5 text-sm font-medium text-white hover:bg-brand-hover">
           Развернуть «Торговый бот» в Revolit
         </button>
       </div>
     );
   }
-  if (liveStatus === 'noauth') {
-    return (
-      <div className={`${box} text-ink-muted`}>
-        Демо-режим: данные в памяти, после перезагрузки сбрасываются.{' '}
-        <a className="font-medium text-brand hover:underline" href="/login?next=/lab">Войдите как администратор</a>, чтобы работать с настоящими данными Revolit.
-      </div>
-    );
-  }
-  return <div className={`${box} text-danger`}>Не удалось связаться с Revolit — показаны демо-данные.</div>;
+  return <div className={`${box} text-danger`}>Не удалось связаться с данными Revolit — показаны демо-данные.</div>;
 }
 
 function Toasts() {
@@ -90,20 +82,19 @@ function Screens() {
   );
 }
 
+/** Кубики внутри настоящей оболочки Revolit (сайдбар, вход, права) — не отдельный сайт. */
 export default function LabApp() {
   return (
     <LabProvider>
-      <div className="min-h-screen bg-surface-muted">
-        <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
-          <header>
-            <div className="text-xs uppercase tracking-wide text-ink-faint">Тестовая сборка из кубиков (лаборатория)</div>
-            <h1 className="text-xl font-semibold text-ink">{PROJECT.name}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-ink-muted">{PROJECT.domain}</p>
-          </header>
-          <ModeBanner />
-          <Diagnostics />
-          <Screens />
-        </div>
+      <div className="space-y-4">
+        <header>
+          <div className="text-xs uppercase tracking-wide text-ink-faint">Собрано конструктором шаблонов</div>
+          <h1 className="text-xl font-semibold text-ink">{PROJECT.name}</h1>
+          <p className="mt-1 max-w-3xl text-sm text-ink-muted">{PROJECT.domain}</p>
+        </header>
+        <ModeBanner />
+        <Diagnostics />
+        <Screens />
       </div>
       <Toasts />
     </LabProvider>
