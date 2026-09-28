@@ -68,6 +68,9 @@ services:
       BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
       AGENT_NAME: agent-1
       AGENT_PRIORITY: "0"
+      # Пауза перед подпиской на очередь при каждом (пере)старте — даёт более приоритетному
+      # потребителю шанс подключиться первым (Р-44, этап 5). Переопределяется, отключается — 0.
+      AGENT_STARTUP_GRACE_MS: "${AGENT_STARTUP_GRACE_MS:-5000}"
       # Планировщик — только на этом агенте: ScheduledJob лежит в БД №1 (ТЗ 7)
       SCHEDULER_ENABLED: "1"
       SCHEDULER_UTC_OFFSET_MINUTES: "${SCHEDULER_UTC_OFFSET_MINUTES:-0}"

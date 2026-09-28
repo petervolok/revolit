@@ -42,6 +42,19 @@ async function main(): Promise<void> {
   await channel.assertExchange(BUS.eventsExchange, 'fanout', { durable: false });
   await channel.prefetch(prefetch);
 
+  // Пауза перед первой подпиской на очередь (при каждом (пере)старте процесса, не постоянно).
+  // RabbitMQ отдаёт сообщение потребителю с наибольшим приоритетом ИЗ УЖЕ ПОДКЛЮЧЁННЫХ на этот
+  // момент — не ждёт, что кто-то более приоритетный подключится позже. Без этой паузы агент,
+  // вставший раньше более приоритетного потребителя, успевал бы забрать сообщения до того, как
+  // тот вообще появился на связи. Значение по умолчанию — 0 (не ждать); включается явно там, где
+  // это нужно. Ничего специфичного про то, кто именно может подключиться позже, здесь нет —
+  // это просто задержка перед стартом обработки, осмысленная одинаково для любой установки.
+  const startupGrace = Number(process.env.AGENT_STARTUP_GRACE_MS) || 0;
+  if (startupGrace > 0) {
+    log(`жду ${startupGrace} мс перед подпиской на очередь`);
+    await sleep(startupGrace);
+  }
+
   await channel.consume(
     BUS.operationsQueue,
     async (msg: ConsumeMessage | null) => {
