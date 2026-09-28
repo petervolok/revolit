@@ -2,6 +2,7 @@ import { cookies, headers } from 'next/headers';
 import { prisma } from '../data/prisma';
 import { generateToken, hashToken } from './crypto';
 import { SECURITY, SESSION_COOKIE } from './config';
+import { getCached, invalidateCached, setCached } from './sessionCache';
 import type { CurrentUser } from './types';
 
 export type { CurrentUser };
@@ -29,18 +30,32 @@ export async function createSession(
   });
 }
 
-/** Возвращает текущего пользователя по cookie либо null, если сессии нет или она недействительна. */
+/**
+ * Возвращает текущего пользователя по cookie либо null, если сессии нет или она недействительна.
+ * Проверенный результат кэшируется в памяти процесса на короткий срок (Р-44, `sessionCache.ts`) —
+ * повторные обращения в пределах этого срока не идут ни в базу, ни в шину.
+ */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
+  const tokenHash = hashToken(token);
+  const cached = getCached(tokenHash);
+  if (cached !== undefined) return cached;
+
   const session = await prisma.session.findUnique({
-    where: { tokenHash: hashToken(token) },
+    where: { tokenHash },
     include: { user: { include: { roles: { include: { role: true } } } } },
   });
 
-  if (!session || session.revokedAt || session.expiresAt < new Date()) return null;
-  if (!session.user.isActive) return null;
+  if (!session || session.revokedAt || session.expiresAt < new Date()) {
+    setCached(tokenHash, null);
+    return null;
+  }
+  if (!session.user.isActive) {
+    setCached(tokenHash, null);
+    return null;
+  }
 
   // Отметка активности, но не чаще раза в 5 минут — чтобы не писать в базу на каждый запрос
   if (Date.now() - session.lastSeenAt.getTime() > 5 * 60 * 1000) {
@@ -51,7 +66,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   const roles = session.user.roles.map((r) => r.role);
 
-  return {
+  const user: CurrentUser = {
     id: session.user.id,
     programId: session.user.programId,
     email: session.user.email,
@@ -59,15 +74,20 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     roles: roles.map((r) => ({ key: r.key, name: r.name })),
     permissions: Array.from(new Set(roles.flatMap((r) => r.permissions))),
   };
+  setCached(tokenHash, user);
+  return user;
 }
 
-/** Завершает текущую сессию. */
+/** Завершает текущую сессию. Кэш снимается сразу — выход не должен ждать протухания. */
 export async function destroySession(): Promise<string | null> {
   const token = cookies().get(SESSION_COOKIE)?.value;
   cookies().delete(SESSION_COOKIE);
   if (!token) return null;
 
-  const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(token) } });
+  const tokenHash = hashToken(token);
+  invalidateCached(tokenHash);
+
+  const session = await prisma.session.findUnique({ where: { tokenHash } });
   if (!session) return null;
 
   await prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
