@@ -24,9 +24,13 @@ services:
       # Явно, а не по process.cwd(): у `next dev` (npm workspaces) он —
       # /app/apps/crm, а у собранного сервера в проде — /app (Р-38)
       STORAGE_DIR: /app/storage
+      # Шина — постоянная часть поставки, не надстройка (Р-44)
+      DATA_MODE: bus
+      BUS_URL: amqp://revolit:revolit@rabbitmq:5672
     depends_on:
       - db
       - mail
+      - agent
     networks:
       - revolit_net
 
@@ -52,10 +56,45 @@ services:
     networks:
       - revolit_net
 
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: revolit
+      RABBITMQ_DEFAULT_PASS: revolit
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit vm_memory_high_watermark 0.3"
+    ports:
+      - "5672:5672"
+    volumes:
+      - revolit_bus:/var/lib/rabbitmq
+    networks:
+      - revolit_net
+
+  agent:
+    build:
+      context: .
+      target: builder
+    command: sh -c "npm run schema && npx tsx apps/agent/src/index.ts"
+    environment:
+      DATABASE_URL: postgresql://revolit:revolit@db:5432/revolit
+      BUS_URL: amqp://revolit:revolit@rabbitmq:5672
+      AGENT_NAME: agent-1
+      AGENT_PRIORITY: "0"
+      SCHEDULER_ENABLED: "1"
+      NODE_ENV: development
+    volumes:
+      - .:/app
+      - revolit_node_modules:/app/node_modules
+    depends_on:
+      - db
+      - rabbitmq
+    networks:
+      - revolit_net
+
 volumes:
   revolit_pgdata:
   revolit_node_modules:
   revolit_storage:
+  revolit_bus:
 
 networks:
   revolit_net:

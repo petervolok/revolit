@@ -80,7 +80,7 @@ jobs:
       # в отдельной сборке agent2 (сервер №2). Проверяем всё, что попадает в образ сервера №1.
       - name: Нет следов сокрытия данных в коде сервера №1
         run: |
-          if grep -rlni "sensitiv" core apps/agent apps/crm/src apps/crm/prisma Dockerfile docker-compose.prod.yml docker-compose.bus.yml \
+          if grep -rlni "sensitiv" core apps/agent apps/crm/src apps/crm/prisma Dockerfile docker-compose.prod.yml \
             --include='*.ts' --include='*.tsx' --include='*.prisma' --include='*.sql' --include='Dockerfile' --include='*.yml' 2>/dev/null | grep -v node_modules; then
             echo "Найден след механизма сокрытия данных в поставке сервера №1 — см. строки выше" >&2
             exit 1

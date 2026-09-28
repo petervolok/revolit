@@ -1,3 +1,6 @@
+# Шина и агент — постоянная часть поставки, не надстройка (Р-44): каждая установка,
+# коробка и облако одинаково, всегда поднимает RabbitMQ и агента данных. `BUS_USER`
+# и `BUS_PASSWORD` — в `.env.prod` на сервере, не в репозитории (Р-13/Р-40, раздел 8).
 name: revolit
 
 services:
@@ -13,8 +16,11 @@ services:
       DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db:5432/revolit
       NODE_ENV: production
       STORAGE_DIR: /app/storage
+      DATA_MODE: bus
+      BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
     depends_on:
       - db
+      - agent
     # Вложения (Р-38) хранятся на диске сервера через StoragePort — без тома
     # каждый пересоздание контейнера при обновлении стирало бы все файлы
     volumes:
@@ -36,9 +42,47 @@ services:
     networks:
       - revolit_net
 
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${BUS_USER}
+      RABBITMQ_DEFAULT_PASS: ${BUS_PASSWORD}
+      # Сервер небольшой — не даём брокеру занимать больше положенного
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit vm_memory_high_watermark 0.3"
+    volumes:
+      - revolit_bus:/var/lib/rabbitmq
+    # Публичный адрес шины: обычная часть архитектуры (docs/11b, раздел 2.1), а не
+    # отверстие «для второго агента» специально — ограничивать источник подключения
+    # нужно на уровне файрвола перед сервером, не в этом файле (docs/11b, раздел 5, п.3)
+    ports:
+      - "5672:5672"
+    networks:
+      - revolit_net
+
+  agent:
+    image: revolit-app:latest
+    restart: unless-stopped
+    command: ["./apps/agent/entrypoint.sh"]
+    environment:
+      DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db:5432/revolit
+      BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
+      AGENT_NAME: agent-1
+      AGENT_PRIORITY: "0"
+      # Планировщик — только на этом агенте: ScheduledJob лежит в БД №1 (ТЗ 7)
+      SCHEDULER_ENABLED: "1"
+      SCHEDULER_UTC_OFFSET_MINUTES: "${SCHEDULER_UTC_OFFSET_MINUTES:-0}"
+      NODE_ENV: production
+    depends_on:
+      - db
+      - rabbitmq
+    networks:
+      - revolit_net
+
 volumes:
   revolit_pgdata:
   revolit_storage:
+  revolit_bus:
 
 networks:
   revolit_net:
