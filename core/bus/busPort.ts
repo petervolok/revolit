@@ -34,7 +34,7 @@ const state: BusState = (globalState.__revolitBus ??= { pending: new Map() });
 
 function busUrl(): string {
   const url = process.env.BUS_URL;
-  if (!url) throw new Error('DATA_MODE=bus требует переменную окружения BUS_URL (адрес шины)');
+  if (!url) throw new Error('Не задана переменная окружения BUS_URL (адрес шины)');
   return url;
 }
 

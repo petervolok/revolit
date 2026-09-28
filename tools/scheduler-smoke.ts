@@ -1,6 +1,6 @@
 /**
  * Смоук-проверка планировщика (ТЗ переработки ядра, этап 7). Запускается в CI после bus-smoke:
- *   DATA_MODE=bus BUS_URL=amqp://... DATABASE_URL=... npx tsx tools/scheduler-smoke.ts
+ *   BUS_URL=amqp://... DATABASE_URL=... npx tsx tools/scheduler-smoke.ts
  * Часть A — чистые проверки разбора и вычисления cron. Часть B — живой прогон: агент с включённым
  * раннером, настоящие Postgres и RabbitMQ, событие приходит в приложение по шине.
  * ЧЕГО НЕ ПРОВЕРЯЕТ: работу планировщика при переключении агентов между серверами и часовые пояса
@@ -56,7 +56,6 @@ async function startAgent(): Promise<Agent> {
   const proc = spawn('node', [AGENT], {
     env: {
       ...process.env,
-      DATA_MODE: 'direct',
       AGENT_NAME: 'agent-sched',
       AGENT_PRIORITY: '0',
       SCHEDULER_ENABLED: '1',

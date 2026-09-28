@@ -24,8 +24,7 @@ services:
       # Явно, а не по process.cwd(): у `next dev` (npm workspaces) он —
       # /app/apps/crm, а у собранного сервера в проде — /app (Р-38)
       STORAGE_DIR: /app/storage
-      # Шина — постоянная часть поставки, не надстройка (Р-44)
-      DATA_MODE: bus
+      # Шина — постоянная часть поставки, не переключатель (Р-44)
       BUS_URL: amqp://revolit:revolit@rabbitmq:5672
     depends_on:
       - db

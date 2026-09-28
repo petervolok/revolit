@@ -100,14 +100,12 @@ jobs:
       - name: Проверка шины и агентов
         run: npx tsx tools/bus-smoke.ts
         env:
-          DATA_MODE: bus
           BUS_URL: amqp://revolit:revolit@localhost:5672
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
       - name: Проверка планировщика
         run: npx tsx tools/scheduler-smoke.ts
         env:
-          DATA_MODE: bus
           BUS_URL: amqp://revolit:revolit@localhost:5672
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 

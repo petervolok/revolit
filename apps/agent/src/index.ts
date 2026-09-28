@@ -14,7 +14,6 @@ import { BUS, fromBuffer, toBuffer } from '../../../core/bus/protocol';
 import type { BusRequest } from '../../../core/bus/protocol';
 import { basePrisma, localDataPort } from '../../../core/data/prisma';
 import { startScheduler } from '../../../core/scheduler/runner';
-import { dataMode } from '../../../core/data/port';
 import { handleRequest } from './handler';
 
 const name = process.env.AGENT_NAME ?? 'agent';
@@ -22,10 +21,8 @@ const log = (message: string) => console.log(`[${name}] ${message}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main(): Promise<void> {
-  if (dataMode() === 'bus') {
-    // Агент, читающий шину через шину, зациклил бы сам себя
-    throw new Error('Агент должен работать в DATA_MODE=direct — он и есть конец шины');
-  }
+  // Агент — терминус шины: работает со своей базой напрямую через localDataPort/basePrisma,
+  // никогда через prisma.ts/getDataPort() (иначе замкнул бы шину сам на себя).
   const url = process.env.BUS_URL;
   if (!url) throw new Error('Не задан BUS_URL');
 

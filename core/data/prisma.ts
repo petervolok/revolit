@@ -1,42 +1,35 @@
 import { PrismaClient } from '@prisma/client';
-import { coreEvents } from '../events/coreEvents';
-import { deriveDomainEvents, WRITE_OPERATIONS } from './domainEvents';
 import { createLocalDataPort } from './localPort';
-import { dataMode, getBusDataPort, isProxied } from './port';
+import { getBusDataPort } from './port';
 import type { DataPort } from './port';
 
 const globalForPrisma = globalThis as unknown as { basePrisma?: PrismaClient };
 
-/** Настоящий клиент своей базы. Агент и режим `direct` работают именно с ним. */
+/** Настоящий клиент своей базы. Только агент работает с ним напрямую (он терминус шины). */
 export const basePrisma = globalForPrisma.basePrisma ?? new PrismaClient();
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.basePrisma = basePrisma;
 }
 
-/** Локальная реализация порта данных — прямой вызов basePrisma */
+/** Локальная реализация порта данных — прямой вызов basePrisma. Использует только агент. */
 export const localDataPort: DataPort = createLocalDataPort(basePrisma);
 
-/**
- * Порт, через который сейчас идут доменные операции: в режиме `direct` — локальный,
- * в режиме `bus` — шинный (ТЗ 3.1).
- */
+/** Приложение всегда работает через шину (Р-44) — прямого режима для него не существует */
 export function getDataPort(): DataPort {
-  return dataMode() === 'bus' ? getBusDataPort() : localDataPort;
+  return getBusDataPort();
 }
 
 /**
- * Клиент для сервисов ядра. В режиме `direct` это сам basePrisma — поведение
- * не отличается от прежнего. В режиме `bus` операции над доменными моделями
- * перехватываются и уходят в порт (ТЗ 3.2); сервисы продолжают писать
- * `prisma.entityRecord.findMany(...)` как раньше. Учётные модели (User, Role,
- * Session …) проходят напрямую в локальную БД в любом режиме.
+ * Клиент для сервисов ядра. Все операции над моделями перехватываются и уходят в порт
+ * (то есть по шине — агент их выполняет настоящим Prisma-клиентом своей базы и публикует
+ * доменные события). Сервисы продолжают писать `prisma.entityRecord.findMany(...)` как раньше.
  */
-const intercepting = basePrisma.$extends({
+export const prisma: PrismaClient = basePrisma.$extends({
   query: {
     $allModels: {
-      async $allOperations({ model, operation, args, query }) {
-        if (!isProxied(model)) return query(args);
+      async $allOperations({ model, operation, args }) {
+        if (!model) throw new Error(`Операция ${operation} без модели не поддерживается портом`);
         return getDataPort().execute({ model, operation, args });
       },
     },
@@ -44,31 +37,9 @@ const intercepting = basePrisma.$extends({
 }) as unknown as PrismaClient;
 
 /**
- * Режим `direct`: те же вызовы Prisma, но после записи в доменную модель выводятся и
- * эмитятся доменные события (ТЗ 6). В режиме `bus` событий здесь нет — их публикует агент.
- */
-const emitting = basePrisma.$extends({
-  query: {
-    $allModels: {
-      async $allOperations({ model, operation, args, query }) {
-        const result = await query(args);
-        if (isProxied(model) && WRITE_OPERATIONS.has(operation)) {
-          for (const e of deriveDomainEvents(model, operation, args, result)) {
-            await coreEvents.emit(e.event, e.payload as never);
-          }
-        }
-        return result;
-      },
-    },
-  },
-}) as unknown as PrismaClient;
-
-export const prisma: PrismaClient = dataMode() === 'bus' ? intercepting : emitting;
-
-/**
- * Пакет операций одним атомарным блоком (ТЗ 3.4). Заменяет `prisma.$transaction([...])`
- * на доменных моделях: через шину массив уже созданных запросов передать нельзя,
- * поэтому операции описываются данными, а агент оборачивает их в настоящий $transaction.
+ * Пакет операций одним атомарным блоком (ТЗ 3.4). Через шину массив уже созданных запросов
+ * передать нельзя, поэтому операции описываются данными, а агент оборачивает их в настоящий
+ * $transaction.
  */
 export function runBatch(ops: { model: string; operation: string; args?: unknown }[]): Promise<unknown[]> {
   return getDataPort().runBatch(ops);

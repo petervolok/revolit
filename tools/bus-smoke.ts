@@ -1,7 +1,7 @@
 /**
  * Смоук-проверка шины и агентов (ТЗ переработки ядра, этап 5; ТЗ 11b, раздел 8).
  * Запускается в CI против настоящих Postgres и RabbitMQ:
- *   DATA_MODE=bus BUS_URL=amqp://... DATABASE_URL=... npx tsx tools/bus-smoke.ts
+ *   BUS_URL=amqp://... DATABASE_URL=... npx tsx tools/bus-smoke.ts
  * Собранный агент — apps/agent/dist/agent.js. Что проверяется: обмен и восстановление Date,
  * повтор create по id, коды ошибок Prisma, атомарный пакет, доменные события через шину,
  * приоритет потребителя, аварийное падение агента (kill -9), возврат и штатная остановка.
@@ -39,7 +39,6 @@ async function startAgent(name: string, priority: number): Promise<Agent> {
   const proc = spawn('node', [AGENT], {
     env: {
       ...process.env,
-      DATA_MODE: 'direct',
       AGENT_NAME: name,
       AGENT_PRIORITY: String(priority),
       AGENT_LOG_OPS: '1',

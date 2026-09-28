@@ -2,7 +2,6 @@ import { describeError } from '../../../core/bus/protocol';
 import type { BusRequest, BusResponse } from '../../../core/bus/protocol';
 import { deriveDomainEvents, WRITE_OPERATIONS } from '../../../core/data/domainEvents';
 import type { DerivedEvent } from '../../../core/data/domainEvents';
-import { isProxied } from '../../../core/data/port';
 import type { DataOperation, DataPort } from '../../../core/data/port';
 
 export interface Handled {
@@ -50,7 +49,9 @@ async function executeOperation(port: DataPort, op: DataOperation): Promise<unkn
 }
 
 function eventsFor(op: DataOperation, result: unknown): DerivedEvent[] {
-  if (!isProxied(op.model) || !WRITE_OPERATIONS.has(op.operation)) return [];
+  // Все модели идут через порт (Р-44) — deriveDomainEvents сама не находит событие
+  // для моделей, для которых оно не задано (чистая функция, безопасный no-op).
+  if (!WRITE_OPERATIONS.has(op.operation)) return [];
   return deriveDomainEvents(op.model, op.operation, op.args, result);
 }
 

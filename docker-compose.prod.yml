@@ -16,7 +16,6 @@ services:
       DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db:5432/revolit
       NODE_ENV: production
       STORAGE_DIR: /app/storage
-      DATA_MODE: bus
       BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
     depends_on:
       - db
