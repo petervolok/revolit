@@ -17,6 +17,9 @@ services:
       NODE_ENV: production
       STORAGE_DIR: /app/storage
       BUS_URL: amqp://${BUS_USER}:${BUS_PASSWORD}@rabbitmq:5672
+      # Для раздела «Настройки → Шина» — чтение состояния очереди через management-API (этап 6)
+      BUS_USER: "${BUS_USER}"
+      BUS_PASSWORD: "${BUS_PASSWORD}"
     depends_on:
       - db
       - agent
@@ -42,7 +45,10 @@ services:
       - revolit_net
 
   rabbitmq:
-    image: rabbitmq:3.13-alpine
+    # Management-плагин — чтобы приложение могло читать состояние шины (число потребителей,
+    # глубина очереди) для раздела «Настройки → Шина» и оповещений (Р-44, этап 6). Сам
+    # management-порт (15672) наружу не пробрасывается — только внутри revolit_net.
+    image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${BUS_USER}
@@ -75,6 +81,12 @@ services:
       SCHEDULER_ENABLED: "1"
       SCHEDULER_UTC_OFFSET_MINUTES: "${SCHEDULER_UTC_OFFSET_MINUTES:-0}"
       NODE_ENV: production
+      # Оповещения о состоянии шины — через уже существующего Telegram-бота (Р-44, этап 6).
+      # Необязательно: без значений оповещения просто не отправляются.
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+      BUS_USER: "${BUS_USER}"
+      BUS_PASSWORD: "${BUS_PASSWORD}"
     depends_on:
       - db
       - rabbitmq

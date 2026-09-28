@@ -26,6 +26,8 @@ services:
       STORAGE_DIR: /app/storage
       # Шина — постоянная часть поставки, не переключатель (Р-44)
       BUS_URL: amqp://revolit:revolit@rabbitmq:5672
+      BUS_USER: revolit
+      BUS_PASSWORD: revolit
     depends_on:
       - db
       - mail
@@ -56,7 +58,9 @@ services:
       - revolit_net
 
   rabbitmq:
-    image: rabbitmq:3.13-alpine
+    # Management-плагин — тот же образ, что и в проде, чтобы раздел «Настройки → Шина»
+    # можно было проверить локально (Р-44, этап 6)
+    image: rabbitmq:3.13-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: revolit
       RABBITMQ_DEFAULT_PASS: revolit

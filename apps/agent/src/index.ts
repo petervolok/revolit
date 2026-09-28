@@ -13,6 +13,7 @@ import type { ConsumeMessage } from 'amqplib';
 import { BUS, fromBuffer, toBuffer } from '../../../core/bus/protocol';
 import type { BusRequest } from '../../../core/bus/protocol';
 import { basePrisma, localDataPort } from '../../../core/data/prisma';
+import { checkBusAndAlert } from '../../../core/bus/alerts';
 import { startScheduler } from '../../../core/scheduler/runner';
 import { handleRequest } from './handler';
 
@@ -115,9 +116,16 @@ async function main(): Promise<void> {
     log('планировщик включён');
   }
 
+  // Наблюдение за очередью (Р-44, этап 6) — не про то, сколько потребителей должно быть,
+  // а про то, разгружается ли очередь вообще. Осмысленно для любой установки.
+  const busCheckInterval = setInterval(() => {
+    checkBusAndAlert().catch((error) => log(`проверка состояния шины не удалась: ${(error as Error).message}`));
+  }, Number(process.env.BUS_ALERT_INTERVAL_MS) || 60_000);
+
   // Штатная остановка: закрываем канал и соединение, чтобы брокер сразу передал поток другому потребителю
   const shutdown = async () => {
     log('остановка');
+    clearInterval(busCheckInterval);
     stopScheduler();
     connection.removeAllListeners('close');
     await channel.close().catch(() => undefined);
