@@ -5,6 +5,7 @@
  * кончился лимит (HTTP 429), система сама пробует следующий по порядку.
  */
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 import { SYSTEM_CONTEXT } from './systemContext';
 import type { AiKeyGroupSummary, AiProvider, ChatMessage } from './types';
 
@@ -77,6 +78,7 @@ export async function createAiGroup(
   try {
     const group = await prisma.aiKeyGroup.create({
       data: {
+        id: newId(),
         programId,
         name: input.name.trim(),
         provider: input.provider,
@@ -144,7 +146,7 @@ export async function addAiKey(
 
   const count = await prisma.aiKey.count({ where: { groupId } });
   await prisma.aiKey.create({
-    data: { groupId, apiKey: input.apiKey.trim(), label: input.label?.trim() || null, order: count },
+    data: { id: newId(), groupId, apiKey: input.apiKey.trim(), label: input.label?.trim() || null, order: count },
   });
 }
 

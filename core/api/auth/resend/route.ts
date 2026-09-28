@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../data/prisma';
+import { newId } from '../../../data/ids';
 import { clientIp, userAgent } from '../../../utils/request';
 import { SECURITY } from '../../../auth/config';
 import { generateLoginCode, hashToken } from '../../../auth/crypto';
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
   const code = generateLoginCode();
   const challenge = await prisma.loginCode.create({
     data: {
+      id: newId(),
       userId: previous.userId,
       codeHash: hashToken(code),
       expiresAt: new Date(Date.now() + SECURITY.codeTtlMinutes * 60000),

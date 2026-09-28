@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../data/prisma';
+import { newId } from '../../data/ids';
 import { clientIp, userAgent } from '../../utils/request';
 import { requirePermission, isDenied } from '../../auth/guard';
 import { isKnownPermission } from '../../auth/permissions';
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
 
   const role = await prisma.role.create({
     data: {
+      id: newId(),
       programId: guard.user.programId,
       key,
       name,

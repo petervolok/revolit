@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../data/prisma';
+import { newId } from '../../data/ids';
 import { hashPassword, validatePasswordStrength } from '../../auth/crypto';
 import { writeAudit } from '../../auth/audit';
 import { clientIp, userAgent } from '../../utils/request';
@@ -44,11 +45,12 @@ export async function POST(req: NextRequest) {
   const email = adminEmail.trim().toLowerCase();
 
   const program = await prisma.program.create({
-    data: { slug, name: programName.trim() },
+    data: { id: newId(), slug, name: programName.trim() },
   });
 
   const adminRole = await prisma.role.create({
     data: {
+      id: newId(),
       programId: program.id,
       key: 'admin',
       name: 'Администратор',
@@ -60,6 +62,7 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.create({
     data: {
+      id: newId(),
       programId: program.id,
       email,
       name: adminName.trim(),
@@ -73,6 +76,7 @@ export async function POST(req: NextRequest) {
   if (mail && typeof mail === 'object' && typeof mail.host === 'string' && mail.host.trim()) {
     await prisma.programSettings.create({
       data: {
+        id: newId(),
         programId: program.id,
         mailHost: mail.host.trim(),
         mailPort: Number(mail.port) || 587,

@@ -19,9 +19,12 @@ export interface DataPort {
 }
 
 /**
- * Доменные модели, которые ходят через порт (ТЗ 3.3). Учётные (User, Role, Session,
- * Program, ProgramSettings, ModuleToggle, AiKey*, AuditLog …) всегда идут напрямую
- * в локальную БД №1 и через шину не проходят.
+ * Модели, которые ходят через порт — то есть через шину в режиме `bus` (Р-44: шина
+ * обязательна везде, `direct` не существует). Раньше учётные модели (User, Role,
+ * Session, Program, ProgramSettings, ModuleToggle, AiKey*, AuditLog) были исключением
+ * и шли только напрямую (Р-40) — исключение снято: владелец сервера №2 тот же самый
+ * человек, что и сервера №1, разделение по доверию было не нужно (см. уточнение
+ * к Р-44 от 28.09.2026).
  */
 export const PROXIED_MODELS: ReadonlySet<string> = new Set([
   'EntityTemplate',
@@ -34,6 +37,19 @@ export const PROXIED_MODELS: ReadonlySet<string> = new Set([
   'ProcessHistoryEntry',
   'Task',
   'Attachment',
+  'Program',
+  'ProgramSettings',
+  'User',
+  'UserRole',
+  'Role',
+  'Session',
+  'LoginCode',
+  'PasswordResetToken',
+  'ModuleToggle',
+  'AiKeyGroup',
+  'AiKey',
+  'AuditLog',
+  'ScheduledJob',
 ]);
 
 export function isProxied(model: string | undefined): boolean {

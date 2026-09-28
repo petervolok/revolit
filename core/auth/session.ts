@@ -1,6 +1,7 @@
 import { cookies, headers } from 'next/headers';
 import { prisma } from '../data/prisma';
 import { generateToken, hashToken } from './crypto';
+import { newId } from '../data/ids';
 import { SECURITY, SESSION_COOKIE } from './config';
 import { getCached, invalidateCached, setCached } from './sessionCache';
 import type { CurrentUser } from './types';
@@ -16,7 +17,7 @@ export async function createSession(
   const expiresAt = new Date(Date.now() + SECURITY.sessionTtlDays * 24 * 60 * 60 * 1000);
 
   await prisma.session.create({
-    data: { userId, tokenHash: hashToken(token), expiresAt, ip: meta.ip, userAgent: meta.userAgent },
+    data: { id: newId(), userId, tokenHash: hashToken(token), expiresAt, ip: meta.ip, userAgent: meta.userAgent },
   });
 
   cookies().set(SESSION_COOKIE, token, {

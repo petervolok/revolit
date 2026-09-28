@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { basePrisma, prisma } from '../../../../data/prisma';
+import { prisma, runBatch } from '../../../../data/prisma';
 import { clientIp, userAgent } from '../../../../utils/request';
 import { hashPassword, hashToken, validatePasswordStrength } from '../../../../auth/crypto';
 import { writeAudit } from '../../../../auth/audit';
@@ -25,25 +25,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Ссылка недействительна или устарела' }, { status: 410 });
   }
 
-  await basePrisma.$transaction([
-    basePrisma.user.update({
-      where: { id: record.userId },
-      data: {
-        passwordHash: await hashPassword(password),
-        mustChangePassword: false,
-        failedAttempts: 0,
-        lockedUntil: null,
+  await runBatch([
+    {
+      model: 'User',
+      operation: 'update',
+      args: {
+        where: { id: record.userId },
+        data: {
+          passwordHash: await hashPassword(password),
+          mustChangePassword: false,
+          failedAttempts: 0,
+          lockedUntil: null,
+        },
       },
-    }),
-    basePrisma.passwordResetToken.update({
-      where: { id: record.id },
-      data: { usedAt: new Date() },
-    }),
+    },
+    { model: 'PasswordResetToken', operation: 'update', args: { where: { id: record.id }, data: { usedAt: new Date() } } },
     // Смена пароля завершает все активные сессии этого пользователя
-    basePrisma.session.updateMany({
-      where: { userId: record.userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    }),
+    {
+      model: 'Session',
+      operation: 'updateMany',
+      args: { where: { userId: record.userId, revokedAt: null }, data: { revokedAt: new Date() } },
+    },
   ]);
 
   await writeAudit({

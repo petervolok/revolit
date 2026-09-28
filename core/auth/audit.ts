@@ -1,4 +1,5 @@
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 
 export type AuditAction =
   | 'auth.login.success'
@@ -39,6 +40,7 @@ export async function writeAudit(entry: AuditEntry): Promise<void> {
   try {
     await prisma.auditLog.create({
       data: {
+        id: newId(),
         programId: entry.programId,
         userId: entry.userId ?? null,
         actorEmail: entry.actorEmail ?? null,

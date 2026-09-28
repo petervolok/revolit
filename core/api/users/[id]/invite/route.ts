@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../../data/prisma';
+import { newId } from '../../../../data/ids';
 import { getCurrentProgram } from '../../../../data/program';
 import { getEffectiveAppUrl } from '../../../../data/settings';
 import { clientIp, userAgent } from '../../../../utils/request';
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const token = generateToken();
   await prisma.passwordResetToken.create({
     data: {
+      id: newId(),
       userId: user.id,
       tokenHash: hashToken(token),
       expiresAt: new Date(Date.now() + INVITE_HOURS * 3600_000),
