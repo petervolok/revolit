@@ -237,6 +237,10 @@ model ProgramSettings {
   // Подтверждение входа кодом из письма. По умолчанию выключено: без настроенной
   // почты код не дойдёт. Включается в настройках после указания почтового сервера.
   twoFactorEnabled Boolean @default(false)
+  // Оповещения о состоянии шины (Р-44, этап 6/7) — тем же приёмом, что и почта (Р-25):
+  // в базе, с откатом на переменные окружения TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID.
+  telegramBotToken String?
+  telegramChatId   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }

@@ -1,4 +1,5 @@
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 
 export class ModuleToggleError extends Error {}
 
@@ -33,7 +34,7 @@ export async function setModuleEnabled(programId: string, moduleKey: string, ena
 
   await prisma.moduleToggle.upsert({
     where: { programId_moduleKey: { programId, moduleKey } },
-    create: { programId, moduleKey, enabled },
+    create: { id: newId(), programId, moduleKey, enabled },
     update: { enabled },
   });
 }

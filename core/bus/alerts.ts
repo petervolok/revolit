@@ -4,16 +4,28 @@
  * осмысленно для установки с любым числом потребителей, ничего не предполагает про то,
  * сколько их должно быть.
  */
+import { basePrisma } from '../data/prisma';
 import { getBusHealth } from './health';
 
-function envReady(): { token: string; chatId: string } | null {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+/**
+ * Настройки берутся из базы (Настройки → Общие → Оповещения в Telegram), с откатом на
+ * переменные окружения — тот же приём, что и с почтой (Р-25). Читается через `basePrisma`
+ * напрямую: этот код исполняется внутри агента, который не пользуется общим `prisma`
+ * (иначе он замкнул бы шину сам на себя, см. apps/agent/src/index.ts).
+ */
+async function credentials(): Promise<{ token: string; chatId: string } | null> {
+  const program = await basePrisma.program.findFirst({ orderBy: { createdAt: 'asc' } });
+  const settings = program
+    ? await basePrisma.programSettings.findUnique({ where: { programId: program.id } })
+    : null;
+
+  const token = settings?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = settings?.telegramChatId || process.env.TELEGRAM_CHAT_ID;
   return token && chatId ? { token, chatId } : null;
 }
 
 async function sendTelegram(text: string): Promise<void> {
-  const creds = envReady();
+  const creds = await credentials().catch(() => null);
   if (!creds) return; // не настроено — молча пропускаем, это не обязательная часть коробки
   try {
     await fetch(`https://api.telegram.org/bot${creds.token}/sendMessage`, {

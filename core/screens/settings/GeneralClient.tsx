@@ -16,6 +16,8 @@ interface Settings {
   mailFrom: string;
   mailPassSet: boolean;
   twoFactorEnabled: boolean;
+  telegramChatId: string;
+  telegramBotTokenSet: boolean;
 }
 
 const EMPTY: Settings = {
@@ -28,11 +30,14 @@ const EMPTY: Settings = {
   mailFrom: '',
   mailPassSet: false,
   twoFactorEnabled: false,
+  telegramChatId: '',
+  telegramBotTokenSet: false,
 };
 
 export default function GeneralClient() {
   const [data, setData] = useState<Settings>(EMPTY);
   const [mailPass, setMailPass] = useState('');
+  const [telegramBotToken, setTelegramBotToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -56,7 +61,7 @@ export default function GeneralClient() {
     const res = await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, mailPass }),
+      body: JSON.stringify({ ...data, mailPass, telegramBotToken }),
     });
     setSaving(false);
 
@@ -67,7 +72,12 @@ export default function GeneralClient() {
     }
 
     setMailPass('');
-    setData((prev) => ({ ...prev, mailPassSet: prev.mailPassSet || Boolean(mailPass) }));
+    setTelegramBotToken('');
+    setData((prev) => ({
+      ...prev,
+      mailPassSet: prev.mailPassSet || Boolean(mailPass),
+      telegramBotTokenSet: prev.telegramBotTokenSet || Boolean(telegramBotToken),
+    }));
     setBanner({ tone: 'ok', text: 'Настройки сохранены' });
   };
 
@@ -183,6 +193,32 @@ export default function GeneralClient() {
               ? 'Перед включением отправьте тестовое письмо и убедитесь, что оно приходит: код входа отправляется на почту сотрудника.'
               : 'Доступно после настройки почты — код входа отправляется письмом.'}
           </p>
+        </div>
+      </section>
+
+      <section className="mb-6">
+        <h2 className="mb-3 text-[13px] font-semibold text-ink">Оповещения в Telegram</h2>
+        <div className="flex flex-col gap-4 rounded-xl border border-line p-4">
+          <p className="text-[13px] text-ink-muted">
+            Сюда приходит сообщение, если очередь операций между приложением и обработчиком данных
+            перестаёт разгружаться (раздел «Настройки → Шина»). Токен создаётся через{' '}
+            <span className="font-medium text-ink">@BotFather</span> в Telegram; chat_id — идентификатор
+            чата или канала, куда бот должен писать.
+          </p>
+          <Input
+            label="Токен бота"
+            type="password"
+            hint={data.telegramBotTokenSet ? 'Токен уже задан — оставьте пустым, чтобы не менять' : undefined}
+            placeholder={data.telegramBotTokenSet ? '••••••••' : ''}
+            value={telegramBotToken}
+            onChange={(e) => setTelegramBotToken(e.target.value)}
+          />
+          <Input
+            label="Chat ID"
+            placeholder="-1001234567890"
+            value={data.telegramChatId}
+            onChange={(e) => set('telegramChatId', e.target.value)}
+          />
         </div>
       </section>
 

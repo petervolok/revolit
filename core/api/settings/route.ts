@@ -3,10 +3,11 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePermission, isDenied } from '../../auth/guard';
 import { prisma } from '../../data/prisma';
+import { newId } from '../../data/ids';
 
 /**
- * Настройки программы. Пароль почты никогда не возвращается клиенту —
- * только признак того, что он задан. Тот же приём, что и с паролями
+ * Настройки программы. Пароль почты и токен Telegram-бота никогда не возвращаются
+ * клиенту — только признак того, что они заданы. Тот же приём, что и с паролями
  * пользователей: секрет пишется, но не читается обратно.
  */
 export async function GET() {
@@ -26,6 +27,8 @@ export async function GET() {
     mailFrom: settings?.mailFrom ?? '',
     mailPassSet: Boolean(settings?.mailPass),
     twoFactorEnabled: settings?.twoFactorEnabled ?? false,
+    telegramChatId: settings?.telegramChatId ?? '',
+    telegramBotTokenSet: Boolean(settings?.telegramBotToken),
   });
 }
 
@@ -34,7 +37,19 @@ export async function PATCH(req: NextRequest) {
   if (isDenied(guard)) return guard.response;
 
   const body = await req.json().catch(() => ({}));
-  const { programName, appUrl, mailHost, mailPort, mailSecure, mailUser, mailPass, mailFrom, twoFactorEnabled } = body ?? {};
+  const {
+    programName,
+    appUrl,
+    mailHost,
+    mailPort,
+    mailSecure,
+    mailUser,
+    mailPass,
+    mailFrom,
+    twoFactorEnabled,
+    telegramBotToken,
+    telegramChatId,
+  } = body ?? {};
 
   if (typeof programName !== 'string' || !programName.trim()) {
     return NextResponse.json({ error: 'Укажите название программы' }, { status: 400 });
@@ -57,13 +72,18 @@ export async function PATCH(req: NextRequest) {
     data: { name: programName.trim() },
   });
 
-  // Пустое поле пароля означает «оставить как есть», а не «стереть» —
-  // иначе поле нельзя было бы показать пустым без потери уже заданного пароля.
+  // Пустое поле секрета означает «оставить как есть», а не «стереть» — иначе поле
+  // нельзя было бы показать пустым без потери уже заданного значения.
   const nextMailPass = typeof mailPass === 'string' && mailPass ? mailPass : existing?.mailPass ?? null;
+  const nextTelegramBotToken =
+    typeof telegramBotToken === 'string' && telegramBotToken ? telegramBotToken : existing?.telegramBotToken ?? null;
+  const nextTelegramChatId =
+    typeof telegramChatId === 'string' && telegramChatId.trim() ? telegramChatId.trim() : null;
 
   await prisma.programSettings.upsert({
     where: { programId: guard.user.programId },
     create: {
+      id: newId(),
       programId: guard.user.programId,
       appUrl: typeof appUrl === 'string' && appUrl.trim() ? appUrl.trim() : null,
       mailHost: typeof mailHost === 'string' && mailHost.trim() ? mailHost.trim() : null,
@@ -73,6 +93,8 @@ export async function PATCH(req: NextRequest) {
       mailPass: nextMailPass,
       mailFrom: typeof mailFrom === 'string' && mailFrom.trim() ? mailFrom.trim() : null,
       twoFactorEnabled: nextTwoFactor,
+      telegramBotToken: nextTelegramBotToken,
+      telegramChatId: nextTelegramChatId,
     },
     update: {
       appUrl: typeof appUrl === 'string' && appUrl.trim() ? appUrl.trim() : null,
@@ -83,6 +105,8 @@ export async function PATCH(req: NextRequest) {
       mailPass: nextMailPass,
       mailFrom: typeof mailFrom === 'string' && mailFrom.trim() ? mailFrom.trim() : null,
       twoFactorEnabled: nextTwoFactor,
+      telegramBotToken: nextTelegramBotToken,
+      telegramChatId: nextTelegramChatId,
     },
   });
 

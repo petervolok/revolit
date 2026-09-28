@@ -4,6 +4,7 @@
  * заново при каждом обращении, ничего из содержимого отдельно не кешируется.
  */
 import { prisma } from '../data/prisma';
+import { newId } from '../data/ids';
 import { getCurrentProgram } from '../data/program';
 import { evaluateLicenseKey } from './verify';
 import type { LicenseStatus } from './types';
@@ -22,7 +23,7 @@ export async function activateLicense(programId: string, rawKey: string): Promis
 
   await prisma.programSettings.upsert({
     where: { programId },
-    create: { programId, licenseKey: rawKey },
+    create: { id: newId(), programId, licenseKey: rawKey },
     update: { licenseKey: rawKey },
   });
 

@@ -131,7 +131,7 @@ export async function setActiveAiGroup(programId: string, groupId: string | null
 
   await prisma.programSettings.upsert({
     where: { programId },
-    create: { programId, activeAiGroupId: groupId },
+    create: { id: newId(), programId, activeAiGroupId: groupId },
     update: { activeAiGroupId: groupId },
   });
 }
