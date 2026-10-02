@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Lock, Pencil, Plus, ShieldCheck, Trash2, Users2 } from 'lucide-react';
+import { Copy, Lock, Pencil, Plus, ShieldCheck, Trash2, Users2 } from 'lucide-react';
 import Badge from '../../ui/Badge';
 import Button from '../../ui/Button';
 import Checkbox from '../../ui/Checkbox';
@@ -31,6 +31,7 @@ export default function RolesClient({ permissionGroups }: { permissionGroups: Pe
   const [form, setForm] = useState({ name: '', description: '', permissions: [] as string[] });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [roleUsers, setRoleUsers] = useState<{ id: string; name: string; email: string; isActive: boolean }[]>([]);
 
   const load = useCallback(async () => {
     const res = await fetch('/api/roles');
@@ -61,6 +62,10 @@ export default function RolesClient({ permissionGroups }: { permissionGroups: Pe
     });
     setFormError('');
     setEditing(role);
+    setRoleUsers([]);
+    fetch(`/api/roles/${role.id}/users`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setRoleUsers);
   };
 
   const closePanel = () => {
@@ -106,6 +111,13 @@ export default function RolesClient({ permissionGroups }: { permissionGroups: Pe
     const res = await fetch(`/api/roles/${role.id}`, { method: 'DELETE' });
     const data = await res.json();
     notify(res.ok ? 'ok' : 'err', res.ok ? 'Роль удалена' : data.error || 'Не удалось удалить');
+    if (res.ok) load();
+  };
+
+  const duplicate = async (role: RoleRow) => {
+    const res = await fetch(`/api/roles/${role.id}/duplicate`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    notify(res.ok ? 'ok' : 'err', res.ok ? `Создана роль «${data.name}»` : data.error || 'Не удалось скопировать');
     if (res.ok) load();
   };
 
@@ -193,6 +205,12 @@ export default function RolesClient({ permissionGroups }: { permissionGroups: Pe
                       onClick: () => openEdit(role),
                     },
                     {
+                      label: 'Копировать',
+                      icon: <Copy className="h-4 w-4" />,
+                      hidden: role.permissions.includes('*'),
+                      onClick: () => duplicate(role),
+                    },
+                    {
                       label: 'Удалить роль',
                       icon: <Trash2 className="h-4 w-4" />,
                       danger: true,
@@ -243,6 +261,24 @@ export default function RolesClient({ permissionGroups }: { permissionGroups: Pe
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder="Чем занимается это рабочее место"
           />
+
+          {editing && (
+            <div>
+              <p className="mb-2 text-[13px] font-medium text-ink">Сотрудники с этой ролью ({roleUsers.length})</p>
+              {roleUsers.length === 0 ? (
+                <p className="text-xs text-ink-faint">Пока никому не назначена</p>
+              ) : (
+                <ul className="space-y-0.5 text-[13px] text-ink">
+                  {roleUsers.map((u) => (
+                    <li key={u.id}>
+                      {u.name} <span className="text-ink-faint">{u.email}</span>
+                      {!u.isActive && <span className="ml-1 text-xs text-ink-faint">(отключён)</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="mb-2 text-[13px] font-medium text-ink">Права</p>

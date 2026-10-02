@@ -10,6 +10,7 @@ import { requirePermission, isDenied } from '../../auth/guard';
 import { generateToken, hashPassword, hashToken } from '../../auth/crypto';
 import { writeAudit } from '../../auth/audit';
 import { coreEvents } from '../../events/coreEvents';
+import { assertCanAssignRoles, RoleError } from '../../roles/service';
 import { inviteEmail, sendMail } from '../../ports/mail';
 import { randomBytes } from 'crypto';
 
@@ -61,6 +62,16 @@ export async function POST(req: NextRequest) {
   });
   if (existing) {
     return NextResponse.json({ error: 'Сотрудник с такой почтой уже есть' }, { status: 409 });
+  }
+
+  // Нельзя назначить роль с правами, которых нет у самого назначающего — проверяем до создания сотрудника
+  if (Array.isArray(roleIds) && roleIds.length > 0) {
+    try {
+      await assertCanAssignRoles(program.id, guard.user, roleIds as string[]);
+    } catch (error) {
+      if (error instanceof RoleError) return NextResponse.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
   }
 
   // Пароль ставит сам сотрудник по ссылке из письма — администратор его не знает

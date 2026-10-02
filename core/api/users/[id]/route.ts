@@ -6,6 +6,7 @@ import { clientIp, userAgent } from '../../../utils/request';
 import { requirePermission, isDenied } from '../../../auth/guard';
 import { writeAudit } from '../../../auth/audit';
 import { coreEvents } from '../../../events/coreEvents';
+import { assertCanAssignRoles, RoleError } from '../../../roles/service';
 
 /** Не даём администратору отобрать доступ у самого себя или обезглавить программу */
 async function wouldLeaveProgramWithoutAdmin(
@@ -57,6 +58,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
+  // Нельзя назначить роль с правами, которых нет у самого назначающего
+  let heldBefore: string[] = [];
+  if (nextRoleIds) {
+    heldBefore = (await prisma.userRole.findMany({ where: { userId: user.id }, select: { roleId: true } })).map((r) => r.roleId);
+    try {
+      await assertCanAssignRoles(guard.user.programId, guard.user, nextRoleIds, heldBefore);
+    } catch (error) {
+      if (error instanceof RoleError) return NextResponse.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
+  }
+
   await prisma.user.update({
     where: { id: user.id },
     data: {
@@ -97,6 +110,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     ip: clientIp(req),
     userAgent: userAgent(req),
   });
+
+  if (nextRoleIds) {
+    const added = nextRoleIds.filter((id) => !heldBefore.includes(id));
+    const removed = heldBefore.filter((id) => !nextRoleIds.includes(id));
+    if (added.length > 0 || removed.length > 0) {
+      await writeAudit({
+        programId: guard.user.programId,
+        userId: guard.user.id,
+        actorEmail: guard.user.email,
+        action: added.length > 0 ? 'role.assigned' : 'role.revoked',
+        target: 'user',
+        targetId: user.id,
+        details: { email: user.email, added, removed },
+        ip: clientIp(req),
+        userAgent: userAgent(req),
+      });
+    }
+  }
 
   const event =
     nextActive === false ? 'user.deactivated' : nextActive === true && !user.isActive ? 'user.activated' : 'user.updated';
