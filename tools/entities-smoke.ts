@@ -312,10 +312,9 @@ async function main(): Promise<void> {
 
 main().catch(async (e) => {
   console.error(e);
-  const text = e instanceof Error ? `${e.message} | ${(e.stack ?? '').split('
-').slice(1, 4).join(' ; ')}` : String(e);
-  console.log(`::error title=entities-smoke crash::${text.replace(/?
-/g, ' ')}`);
+  const stack = e instanceof Error ? (e.stack ?? '').split(/\r?\n/).slice(1, 4).join(' ; ') : '';
+  const text = e instanceof Error ? `${e.message} | ${stack}` : String(e);
+  console.log(`::error title=entities-smoke crash::${text.replace(/[\r\n]+/g, ' ')}`);
   await basePrisma.$disconnect();
   process.exit(1);
 });
