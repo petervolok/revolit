@@ -4,7 +4,8 @@
       "Bash(docker compose *)",
       "Bash(docker exec *)",
       "Bash(docker history *)",
-      "Bash(docker volume *)"
+      "Bash(docker volume *)",
+      "Bash(awk '{print $2}')"
     ]
   }
 }

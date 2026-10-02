@@ -140,8 +140,8 @@ async function main(): Promise<void> {
   t = await updateField(P, KEY, field('Site').id, { label: 'Web', type: 'text', required: false });
   check('тип меняется между текстовыми, название меняется, ключ остаётся', field('Web').key === 'site' && field('Web').type === 'text');
 
-  const choicesIn = (n: string[]) => ({ label: 'Status', type: 'select' as const, required: false, options: { choices: n }, hasDefault: true, defaultValue: 'a' });
-  check('удаление используемого значения списка отклонено', (await failsWith(() => updateField(P, KEY, field('Status').id, choicesIn(['b', 'c']))))?.includes('используются') === true);
+  const choicesIn = (n: string[], def = 'a') => ({ label: 'Status', type: 'select' as const, required: false, options: { choices: n }, hasDefault: true, defaultValue: def });
+  check('удаление используемого значения списка отклонено', (await failsWith(() => updateField(P, KEY, field('Status').id, choicesIn(['b', 'c'], 'b'))))?.includes('используются') === true);
   t = await updateField(P, KEY, field('Status').id, choicesIn(['a', 'b', 'd']));
   check('неиспользуемое значение списка убирается, новое добавляется', (field('Status').options as { choices: string[] }).choices.join() === 'a,b,d');
 
