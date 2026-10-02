@@ -26,6 +26,8 @@ import {
   updateRecord,
 } from '../core/entities/service';
 import type { FieldInput } from '../core/entities/service';
+import { parseRecordQuery, wantsPage } from '../core/entities/query';
+import type { FilterOp, RecordQuery } from '../core/entities/query';
 import { displayValue, recordLabel } from '../core/entities/types';
 import type { EntityTemplateDef } from '../core/entities/types';
 
