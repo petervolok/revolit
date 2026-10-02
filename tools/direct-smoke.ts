@@ -27,9 +27,10 @@ function check(name: string, ok: boolean, detail = ''): void {
   if (!ok) failures++;
 }
 
-function waitEvent(name: string, ms = 5000): Promise<Record<string, unknown> | null> {
+function waitEvent(name: string, ms = 5000, accept: (p: Record<string, unknown>) => boolean = () => true): Promise<Record<string, unknown> | null> {
   return new Promise((resolve) => {
     const off = coreEvents.on(name as never, ((payload: Record<string, unknown>) => {
+      if (!accept(payload)) return;
       off();
       resolve(payload);
     }) as never);
@@ -85,7 +86,7 @@ async function main(): Promise<void> {
   await basePrisma.scheduledJob.create({
     data: { id: newId(), programId: PROGRAM, key: 'direct-tick', cronExpression: '* * * * *', lastRunAt: new Date(Date.now() - 120_000) },
   });
-  const fired = waitEvent('scheduler.job.fired', 8000);
+  const fired = waitEvent('scheduler.job.fired', 8000, (p) => p.jobKey === 'direct-tick');
   const stop = startDirectRuntime();
   const payload = await fired;
   check('планировщик работает внутри приложения без агента', payload?.jobKey === 'direct-tick');
