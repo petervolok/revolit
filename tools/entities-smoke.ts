@@ -18,6 +18,7 @@ import {
   deleteTemplate,
   listRecords,
   listReverse,
+  queryRecords,
   removeField,
   renameTemplate,
   reorderFields,
@@ -238,6 +239,66 @@ async function main(): Promise<void> {
   t = await updateField(P, KEY, firmsId, { label: 'Firms', type: 'relations', required: false, options: { targetTemplateId: company.id } });
   const back = (await listRecords(P, KEY)).find((r) => r.id === m2.id)!;
   check('связь с одной → с несколькими: значение превращается в список', field('Firms').type === 'relations' && JSON.stringify(back.data.firms) === JSON.stringify([c4.id]));
+
+  // — Поиск, фильтры, сортировка, страницы на сервере (строка 3) —
+  const goods = await createTemplate(P, { name: 'Товар', namePlural: 'Товары' });
+  await addField(P, goods.key, { label: 'Title', type: 'text', required: true });
+  await addField(P, goods.key, { label: 'Price', type: 'number', required: false });
+  await addField(P, goods.key, { label: 'Kind', type: 'select', required: false, options: { choices: ['еда', 'книги', 'техника'] } });
+  await addField(P, goods.key, { label: 'Tags', type: 'multiselect', required: false, options: { choices: ['new', 'sale'] } });
+  await addField(P, goods.key, { label: 'Active', type: 'boolean', required: false });
+  const rows: Record<string, unknown>[] = [
+    { title: 'Яблоки', price: 100, kind: 'еда', tags: ['sale'], active: true },
+    { title: 'Груши', price: 250, kind: 'еда', active: false },
+    { title: 'Роман', price: 400, kind: 'книги', tags: ['new', 'sale'], active: true },
+    { title: 'Атлас', price: 1200, kind: 'книги', active: true },
+    { title: 'Ноутбук', price: 90000, kind: 'техника', tags: ['new'], active: true },
+    { title: 'Кабель', kind: 'техника', active: false },
+    { title: 'Яблочный сок', price: 150, kind: 'еда', active: true },
+  ];
+  for (const row of rows) await createRecord(P, goods.key, row);
+  const q = (query: RecordQuery) => queryRecords(P, goods.key, query);
+  const titles = (page: { records: { data: Record<string, unknown> }[] }) => page.records.map((r) => r.data.title);
+  const f = (field: string, op: FilterOp, value?: unknown) => q({ filters: [{ field, op, value }], pageSize: 100 });
+
+  const all = await q({ pageSize: 100 });
+  check('без условий возвращаются все записи с общим числом', all.total === 7 && all.records.length === 7);
+  const p1 = await q({ pageSize: 3, page: 1 });
+  const p3 = await q({ pageSize: 3, page: 3 });
+  check('страницы: размер, число страниц, последняя неполная', p1.records.length === 3 && p1.pages === 3 && p3.records.length === 1 && p3.total === 7);
+  check('страница за пределами возвращается как последняя', (await q({ pageSize: 3, page: 99 })).page === 3);
+  check('размер страницы ограничен сверху', (await q({ pageSize: 100000 })).pageSize === 200);
+
+  const asc = await q({ sort: { field: 'price', dir: 'asc' }, pageSize: 100 });
+  check('сортировка по числу по возрастанию, пустые в конце', titles(asc).join() === 'Яблоки,Яблочный сок,Груши,Роман,Атлас,Ноутбук,Кабель', titles(asc).join());
+  const desc = await q({ sort: { field: 'price', dir: 'desc' }, pageSize: 100 });
+  check('сортировка по убыванию, пустые всё равно в конце', titles(desc).join() === 'Ноутбук,Атлас,Роман,Груши,Яблочный сок,Яблоки,Кабель', titles(desc).join());
+  const byTitle = await q({ sort: { field: 'title', dir: 'asc' }, pageSize: 100 });
+  check('сортировка по тексту по алфавиту', titles(byTitle)[0] === 'Атлас' && titles(byTitle)[6] === 'Яблочный сок', titles(byTitle).join());
+  const byCreated = await q({ sort: { field: 'createdAt', dir: 'asc' }, pageSize: 100 });
+  check('сортировка по служебной дате создания', titles(byCreated)[0] === 'Яблоки' && titles(byCreated)[6] === 'Яблочный сок', titles(byCreated).join());
+
+  check('поиск по подстроке во всех полях без учёта регистра', titles(await q({ q: 'ЯБЛ', pageSize: 100 })).sort().join() === 'Яблоки,Яблочный сок');
+  check('поиск по значению списка', (await q({ q: 'техника' })).total === 2);
+
+  check('фильтр «равно» по списку', (await f('kind', 'eq', 'книги')).total === 2);
+  check('фильтр «не равно» включает записи без значения', (await f('kind', 'ne', 'еда')).total === 4);
+  check('фильтр «больше» по числу не берёт записи без числа', (await f('price', 'gt', 200)).total === 4);
+  check('фильтр «не больше» по числу', titles(await f('price', 'lte', 150)).sort().join() === 'Яблоки,Яблочный сок');
+  check('фильтр «одно из»', (await f('kind', 'in', ['еда', 'техника'])).total === 5);
+  check('фильтр «содержит» по списку с несколькими значениями', (await f('tags', 'contains', 'sale')).total === 2);
+  check('фильтр «пусто» и «не пусто»', (await f('price', 'empty')).total === 1 && (await f('price', 'notEmpty')).total === 6);
+  check('фильтр по да/нет', (await f('active', 'eq', 'false')).total === 2 && (await f('active', 'eq', true)).total === 5);
+  check('несколько условий складываются через «и»', titles(await q({ filters: [{ field: 'kind', op: 'eq', value: 'еда' }, { field: 'price', op: 'gte', value: 150 }], pageSize: 100 })).sort().join() === 'Груши,Яблочный сок');
+  check('поиск, фильтр и сортировка вместе', titles(await q({ q: 'я', filters: [{ field: 'kind', op: 'eq', value: 'еда' }], sort: { field: 'price', dir: 'desc' }, pageSize: 100 })).join() === 'Яблочный сок,Яблоки');
+  check('фильтр по дате создания «позже» будущей даты ничего не находит', (await f('createdAt', 'gt', '2999-01-01')).total === 0);
+  check('неизвестное поле в фильтре — понятная ошибка', (await failsWith(() => f('nope', 'eq', 1)))?.includes('Неизвестное поле') === true);
+  check('неизвестное поле сортировки — понятная ошибка', (await failsWith(() => q({ sort: { field: 'nope', dir: 'asc' } })))?.includes('Неизвестное поле') === true);
+
+  const parsed = parseRecordQuery(new URLSearchParams({ filter: '[{"field":"kind","op":"eq","value":"еда"}]', sort: 'price', dir: 'desc', page: '2' }));
+  check('параметры адресной строки разбираются в запрос', typeof parsed !== 'string' && parsed.sort?.dir === 'desc' && parsed.filters?.[0].op === 'eq' && parsed.page === 2);
+  check('битый фильтр в адресной строке даёт текст ошибки', typeof parseRecordQuery(new URLSearchParams({ filter: '{' })) === 'string' && typeof parseRecordQuery(new URLSearchParams({ filter: '[{"op":"eq"}]' })) === 'string');
+  check('постраничный ответ включается только при параметрах', wantsPage(new URLSearchParams({ q: 'а' })) && !wantsPage(new URLSearchParams()));
 
   // Уборка
   await basePrisma.entityRecord.deleteMany({ where: { programId: P } });

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Link2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Filter, Link2, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import Button from '../ui/Button';
 import Checkbox from '../ui/Checkbox';
 import EmptyState from '../ui/EmptyState';
@@ -13,6 +13,8 @@ import SlideOver from '../ui/SlideOver';
 import AttachmentsSection from '../attachments/AttachmentsSection';
 import { displayValue, recordLabel } from '../entities/types';
 import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, ReverseRelationGroup } from '../entities/types';
+import { FILTER_OP_LABELS, opsForType } from '../entities/query';
+import type { FilterOp } from '../entities/query';
 import type { LinkedInstanceDef } from '../processes/types';
 import type { TaskDef } from '../tasks/types';
 
@@ -48,12 +50,33 @@ interface ProgramUser {
 /** Значение поля в форме: текстовые поля — строка, список с несколькими значениями — массив */
 type FormValue = string | string[] | boolean;
 
+/** Условие фильтра в экране: значение вводится строкой, на сервер уходит приведённым */
+interface FilterDraft {
+  field: string;
+  op: FilterOp;
+  value: string;
+}
+
+const PAGE_SIZE = 25;
+const SYSTEM_COLUMNS = [
+  { key: 'createdAt', label: 'Создано' },
+  { key: 'updatedAt', label: 'Изменено' },
+];
+
 export default function EntityRecordsClient({ templateKey }: { templateKey: string }) {
   const [template, setTemplate] = useState<EntityTemplateDef | null>(null);
   const [records, setRecords] = useState<EntityRecordDef[]>([]);
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
   const [query, setQuery] = useState('');
+  const [searchApplied, setSearchApplied] = useState('');
+  const [sort, setSort] = useState<{ field: string; dir: 'asc' | 'desc' } | null>(null);
+  const [filters, setFilters] = useState<FilterDraft[]>([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(1);
+  const [anyRecords, setAnyRecords] = useState(true);
 
   // Для полей-связей: список записей целевой сущности, чтобы показать их не идентификатором, а именем
   const [relationOptions, setRelationOptions] = useState<Record<string, { id: string; label: string }[]>>({});
@@ -72,18 +95,51 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
   // Задачи, заведённые по этой записи — тем же приёмом (Р-37)
   const [linkedTasks, setLinkedTasks] = useState<TaskDef[]>([]);
 
+  // Поиск уходит на сервер не на каждую букву, а когда пользователь на секунду остановился
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchApplied(query.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+    if (searchApplied) params.set('q', searchApplied);
+    if (sort) {
+      params.set('sort', sort.field);
+      params.set('dir', sort.dir);
+    }
+    const ready = filters
+      .filter((f) => f.field && (f.op === 'empty' || f.op === 'notEmpty' || f.value.trim() !== ''))
+      .map((f) => ({ field: f.field, op: f.op, value: f.op === 'in' ? f.value.split(',').map((x) => x.trim()).filter(Boolean) : f.value }));
+    if (ready.length > 0) params.set('filter', JSON.stringify(ready));
+    return params.toString();
+  }, [page, searchApplied, sort, filters]);
+
+  const filtersActive = Boolean(searchApplied) || queryString.includes('filter=');
+
   const load = useCallback(async () => {
-    const res = await fetch(`/api/entities/${templateKey}/records`);
+    const res = await fetch(`/api/entities/${templateKey}/records?${queryString}`);
     if (!res.ok) {
-      setTemplate(null);
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 404) setTemplate(null);
+      else setBanner({ tone: 'err', text: typeof body.error === 'string' ? body.error : 'Не удалось загрузить записи' });
       setLoading(false);
       return;
     }
     const body = await res.json();
     setTemplate(body.template);
     setRecords(body.records);
+    setTotal(body.total);
+    setPages(body.pages);
+    if (body.page !== page) setPage(body.page);
+    // «Записей нет совсем» и «под фильтр ничего не подошло» — разные состояния экрана
+    if (body.total > 0) setAnyRecords(true);
+    else if (!queryString.includes('q=') && !queryString.includes('filter=')) setAnyRecords(false);
     setLoading(false);
-  }, [templateKey]);
+  }, [templateKey, queryString, page]);
 
   useEffect(() => {
     load();
@@ -133,13 +189,15 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
   // Колонки списка: поля, помеченные «не показывать в списке», скрыты (в форме они остаются)
   const columns = useMemo(() => allFields.filter((f) => !f.hidden), [allFields]);
 
-  const visibleRecords = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return records;
-    return records.filter((r) =>
-      allFields.some((f) => String(r.data[f.key] ?? '').toLowerCase().includes(q))
-    );
-  }, [records, allFields, query]);
+  const toggleSort = (field: string) => {
+    setPage(1);
+    setSort((prev) => (prev?.field !== field ? { field, dir: 'asc' } : prev.dir === 'asc' ? { field, dir: 'desc' } : null));
+  };
+
+  const updateFilter = (i: number, patch: Partial<FilterDraft>) => {
+    setPage(1);
+    setFilters((prev) => prev.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
+  };
 
   if (loading) return null;
   if (!template) {
@@ -279,15 +337,20 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
           {template.description && <p className="mt-1 text-[13px] text-ink-muted">{template.description}</p>}
         </div>
         <div className="flex items-center gap-3">
-          {records.length > 0 && (
-            <div className="w-56">
-              <Input
-                placeholder="Поиск"
-                leading={<Search className="h-4 w-4" />}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
+          {(anyRecords || filtersActive) && (
+            <>
+              <div className="w-56">
+                <Input
+                  placeholder="Поиск"
+                  leading={<Search className="h-4 w-4" />}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
+                <Filter className="h-4 w-4" /> Фильтры{filters.length > 0 ? ` (${filters.length})` : ''}
+              </Button>
+            </>
           )}
           <Button variant="primary" onClick={openCreate}>
             <Plus className="h-4 w-4" /> Добавить
@@ -306,7 +369,101 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
         </div>
       )}
 
-      {records.length === 0 && (
+      {filtersOpen && (
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-line p-3">
+          {filters.map((f, i) => {
+            const def = allFields.find((x) => x.key === f.field);
+            const ops = opsForType(def ? def.type : 'system');
+            const needsValue = f.op !== 'empty' && f.op !== 'notEmpty';
+            const choices = def && (def.type === 'select' || def.type === 'multiselect') ? (def.options as { choices: string[] }).choices : null;
+            const inputType = def?.type === 'number' ? 'number' : def?.type === 'date' || !def ? 'date' : def.type === 'datetime' ? 'datetime-local' : 'text';
+            return (
+              <div key={i} className="flex flex-wrap items-center gap-2">
+                <div className="w-44">
+                  <Select
+                    value={f.field}
+                    onChange={(e) => {
+                      const next = allFields.find((x) => x.key === e.target.value);
+                      updateFilter(i, { field: e.target.value, op: opsForType(next ? next.type : 'system')[0], value: '' });
+                    }}
+                  >
+                    {allFields.map((x) => (
+                      <option key={x.key} value={x.key}>
+                        {x.label}
+                      </option>
+                    ))}
+                    {SYSTEM_COLUMNS.map((x) => (
+                      <option key={x.key} value={x.key}>
+                        {x.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="w-40">
+                  <Select value={f.op} onChange={(e) => updateFilter(i, { op: e.target.value as FilterOp })}>
+                    {ops.map((o) => (
+                      <option key={o} value={o}>
+                        {FILTER_OP_LABELS[o]}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                {needsValue && (
+                  <div className="w-52">
+                    {def?.type === 'boolean' ? (
+                      <Select value={f.value} onChange={(e) => updateFilter(i, { value: e.target.value })}>
+                        <option value="">—</option>
+                        <option value="true">да</option>
+                        <option value="false">нет</option>
+                      </Select>
+                    ) : choices && f.op !== 'in' ? (
+                      <Select value={f.value} onChange={(e) => updateFilter(i, { value: e.target.value })}>
+                        <option value="">—</option>
+                        {choices.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input
+                        type={f.op === 'in' || f.op === 'contains' ? 'text' : inputType}
+                        placeholder={f.op === 'in' ? 'значения через запятую' : 'значение'}
+                        value={f.value}
+                        onChange={(e) => updateFilter(i, { value: e.target.value })}
+                      />
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  aria-label="Убрать условие"
+                  className="rounded-md p-1.5 text-ink-muted hover:bg-surface-muted"
+                  onClick={() => {
+                    setPage(1);
+                    setFilters((prev) => prev.filter((_, idx) => idx !== i));
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            );
+          })}
+          <div>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const first = allFields[0];
+                setFilters((prev) => [...prev, { field: first?.key ?? 'createdAt', op: opsForType(first ? first.type : 'system')[0], value: '' }]);
+              }}
+            >
+              <Plus className="h-4 w-4" /> Условие
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!anyRecords && !filtersActive && (
         <EmptyState
           icon={Plus}
           title="Записей пока нет"
@@ -319,25 +476,28 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
         />
       )}
 
-      {records.length > 0 && visibleRecords.length === 0 && (
-        <EmptyState icon={Search} title="Ничего не найдено" description="Попробуйте изменить запрос поиска." />
+      {filtersActive && records.length === 0 && (
+        <EmptyState icon={Search} title="Ничего не найдено" description="Попробуйте изменить поиск или условия фильтра." />
       )}
 
-      {visibleRecords.length > 0 && (
+      {records.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-line">
           <table className="w-full text-left text-[13px]">
             <thead>
               <tr className="border-b border-line bg-surface-muted/60 text-xs text-ink-muted">
                 {columns.map((f) => (
                   <th key={f.id} className="px-4 py-2.5 font-medium">
-                    {f.label}
+                    <button type="button" className="inline-flex items-center gap-1 hover:text-ink" onClick={() => toggleSort(f.key)}>
+                      {f.label}
+                      {sort?.field === f.key && (sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                    </button>
                   </th>
                 ))}
                 <th className="w-10" />
               </tr>
             </thead>
             <tbody>
-              {visibleRecords.map((r) => (
+              {records.map((r) => (
                 <tr
                   key={r.id}
                   onClick={() => openEdit(r)}
@@ -360,6 +520,28 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {records.length > 0 && (
+        <div className="mt-3 flex items-center justify-between text-[13px] text-ink-muted">
+          <span>
+            Всего: {total}
+            {filtersActive ? ' (по условиям)' : ''}
+          </span>
+          {pages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span>
+                {page} из {pages}
+              </span>
+              <Button variant="secondary" disabled={page >= pages} onClick={() => setPage(page + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

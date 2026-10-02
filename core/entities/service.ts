@@ -14,6 +14,8 @@ import type { Prisma } from '@prisma/client';
 import { prisma, runBatch } from '../data/prisma';
 import { newId } from '../data/ids';
 import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, FieldOptions, FieldType, FieldValidation, ReverseRelationGroup } from './types';
+import { applyQuery } from './query';
+import type { RecordPage, RecordQuery } from './query';
 import { FIELD_TYPES, STRING_TYPES, UNIQUE_TYPES, recordLabel, slugify } from './types';
 
 export class EntityError extends Error {}
@@ -734,13 +736,14 @@ export async function reorderFields(
 
 // ─── Записи ───
 
-export async function listRecords(programId: string, templateKey: string): Promise<EntityRecordDef[]> {
+export async function listRecords(programId: string, templateKey: string, limit?: number): Promise<EntityRecordDef[]> {
   const template = await prisma.entityTemplate.findUnique({ where: { programId_key: { programId, key: templateKey } } });
   if (!template) throw new EntityError('Сущность не найдена');
 
   const rows = await prisma.entityRecord.findMany({
     where: { templateId: template.id },
     orderBy: { createdAt: 'desc' },
+    ...(limit ? { take: limit } : {}),
   });
   return rows.map((r) => ({
     id: r.id,
@@ -748,6 +751,21 @@ export async function listRecords(programId: string, templateKey: string): Promi
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   }));
+}
+
+/** Предел числа записей, которые сервер просматривает при поиске и сортировке одной сущности */
+export const QUERY_SCAN_LIMIT = 50_000;
+
+/** Записи с поиском, фильтрами, сортировкой и страницей — браузеру уходит только одна страница */
+export async function queryRecords(programId: string, templateKey: string, query: RecordQuery): Promise<RecordPage> {
+  const template = await getTemplate(programId, templateKey);
+  if (!template) throw new EntityError('Сущность не найдена');
+  const all = await listRecords(programId, templateKey, QUERY_SCAN_LIMIT);
+  try {
+    return applyQuery(all, template.fields, query);
+  } catch (error) {
+    throw new EntityError((error as Error).message);
+  }
 }
 
 export async function createRecord(
