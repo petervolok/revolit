@@ -16,6 +16,6 @@ export async function GET() {
     throw error;
   }
 
-  const templates = await listReportableTemplates(guard.user.programId);
+  const templates = await listReportableTemplates(guard.user.programId, guard.user);
   return NextResponse.json(templates);
 }

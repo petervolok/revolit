@@ -130,6 +130,22 @@ export async function readableTemplateIds(user: ViewerUser): Promise<Set<string>
   return new Set(rows.map((r) => r.templateId));
 }
 
+/**
+ * Вправе ли сотрудник выполнить действие над записью — для всего, что привязано к записи
+ * (вложения, дела по записи): они наследуют права на запись, своих у них нет
+ */
+export async function canAccessRecord(user: ViewerUser, recordId: string, action: EntityAction): Promise<boolean> {
+  const record = await prisma.entityRecord.findFirst({
+    where: { id: recordId, programId: user.programId },
+    select: { templateId: true, createdById: true },
+  });
+  if (!record) return false;
+  const access = await resolveAccess(user, record.templateId);
+  if (!access) return true;
+  if (!access[action]) return false;
+  return !access.own || record.createdById === access.userId;
+}
+
 /** Есть ли у сотрудника доступ хоть к какой-то сущности (для служебных справочников вроде списка сотрудников) */
 export async function hasAnyEntityAccess(user: ViewerUser): Promise<boolean> {
   const ids = await readableTemplateIds(user);

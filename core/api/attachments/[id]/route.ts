@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser, hasPermission } from '../../../auth/session';
 import { prisma } from '../../../data/prisma';
+import { canAccessRecord } from '../../../entities/access';
 import { AttachmentError, deleteAttachment } from '../../../attachments/service';
 
 async function loadOwnAttachment(programId: string, id: string) {
@@ -10,7 +11,6 @@ async function loadOwnAttachment(programId: string, id: string) {
 }
 
 function permissionFor(row: { entityRecordId: string | null; processInstanceId: string | null }): string {
-  if (row.entityRecordId) return 'entities.manage';
   if (row.processInstanceId) return 'processes.manage';
   return 'tasks.use';
 }
@@ -21,7 +21,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const row = await loadOwnAttachment(user.programId, params.id);
   if (!row) return NextResponse.json({ error: 'Вложение не найдено' }, { status: 404 });
-  if (!hasPermission(user, permissionFor(row))) {
+  const permitted = row.entityRecordId ? await canAccessRecord(user, row.entityRecordId, 'update') : hasPermission(user, permissionFor(row));
+  if (!permitted) {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 

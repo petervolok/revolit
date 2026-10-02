@@ -10,6 +10,7 @@ import { basePrisma } from '../core/data/prisma';
 import { newId } from '../core/data/ids';
 import {
   AccessError,
+  canAccessRecord,
   hasAnyEntityAccess,
   mergeRules,
   type AccessRule,
@@ -29,6 +30,7 @@ import {
   updateRecord,
 } from '../core/entities/service';
 import { RoleError } from '../core/roles/service';
+import { ReportError, getFieldReport, listReportableTemplates } from '../core/reports/service';
 import { getRoleEntityAccess, setRoleEntityAccess, type EntityAccessRuleDto } from '../core/roles/entityAccess';
 
 let failures = 0;
@@ -212,6 +214,29 @@ async function main(): Promise<void> {
   const sysRole = await basePrisma.role.create({ data: { id: newId(), programId: P, key: 'admin', name: 'Администратор', permissions: ['*'], isSystem: true } });
   check('у роли с полным доступом настраивать нечего', (await denied(() => saveRules(sysRole.id, []))) === 'role');
   check('роль чужой программы недоступна', (await denied(() => getRoleEntityAccess('чужая', rReader.id))) === 'role');
+
+  // — Всё, что привязано к записи, наследует права на запись; отчёты считают только доступное —
+  check('доступ к записи: администратор может всё', (await canAccessRecord(admin, a1.id, 'read')) && (await canAccessRecord(admin, a1.id, 'update')));
+  check('доступ к записи: читатель читает, но не меняет', (await canAccessRecord(reader, a1.id, 'read')) && !(await canAccessRecord(reader, a1.id, 'update')));
+  check('доступ к записи: «только свои» не открывает чужую запись, но открывает свою', !(await canAccessRecord(own, a1.id, 'read')) && (await canAccessRecord(own, (await createRecord(P, order.key, { title: 'Своя для вложений' }, own)).id, 'update')));
+  check('доступ к записи: без роли нельзя ничего; несуществующая запись — нельзя', !(await canAccessRecord(none, a1.id, 'read')) && !(await canAccessRecord(admin, 'нет-такой', 'read')));
+
+  const ticket = await createTemplate(P, { name: 'Заявка', namePlural: 'Заявки' });
+  await addField(P, ticket.key, { label: 'Stage', type: 'select', required: false, options: { choices: ['новая', 'в работе'] } });
+  await addField(P, ticket.key, { label: 'Title', type: 'text', required: false });
+  const tTicket = (await getTemplateFor(P, ticket.key))!;
+  for (const stage of ['новая', 'новая', 'в работе']) await createRecord(P, ticket.key, { stage, title: 'з' }, admin);
+  await saveRules(rReader.id, [{ templateId: tTicket.id, canRead: true }]);
+  const rep = (await listReportableTemplates(P, reader)).find((t) => t.key === ticket.key);
+  check('отчёты: читатель видит сущность, к которой есть доступ, с числом записей', rep?.recordCount === 3);
+  check('отчёты: распределение считается по доступным записям', (await getFieldReport(P, ticket.key, 'stage', reader)).buckets.find((b) => b.label === 'новая')?.count === 2);
+  check('отчёты: сотрудник без доступа не видит сущностей', (await listReportableTemplates(P, none)).length === 0);
+  check('отчёты: чужая сущность недоступна по ключу', await (async () => { try { await getFieldReport(P, ticket.key, 'stage', none); return false; } catch (e) { return e instanceof ReportError; } })());
+  await saveRules(rReader.id, [{ templateId: tTicket.id, canRead: true, rowScope: 'own' }]);
+  check('отчёты: при «только свои» чужие записи не считаются', (await getFieldReport(P, ticket.key, 'stage', reader)).total === 0);
+  await saveRules(rReader.id, [{ templateId: tTicket.id, canRead: true, hiddenFields: ['stage'] }]);
+  check('отчёты: по скрытому полю отчёт построить нельзя', await (async () => { try { await getFieldReport(P, ticket.key, 'stage', reader); return false; } catch (e) { return e instanceof ReportError; } })());
+  check('отчёты: администратор видит всё', (await getFieldReport(P, ticket.key, 'stage', admin)).total === 3);
 
   // — Каскады —
   await saveRules(rReader.id, [{ templateId: tReq.id, canRead: true }]);

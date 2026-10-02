@@ -3,13 +3,22 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser, hasPermission } from '../../auth/session';
 import { AttachmentError, listAttachments, uploadAttachment } from '../../attachments/service';
+import { canAccessRecord } from '../../entities/access';
 import type { AttachmentParent } from '../../attachments/service';
 
 /** Право зависит от того, к чему привязано вложение — своего права у вложений нет (Р-38) */
 function parentPermission(parent: AttachmentParent): string {
-  if ('entityRecordId' in parent) return 'entities.manage';
   if ('processInstanceId' in parent) return 'processes.manage';
   return 'tasks.use';
+}
+
+/**
+ * Для вложений записи сущности действуют права на саму запись (строка 5): смотреть и скачивать — кто
+ * вправе читать запись, добавлять и удалять — кто вправе её менять. Для остальных — прежние права.
+ */
+async function allowed(user: Parameters<typeof hasPermission>[0], parent: AttachmentParent, action: 'read' | 'update'): Promise<boolean> {
+  if ('entityRecordId' in parent) return canAccessRecord(user, parent.entityRecordId, action);
+  return hasPermission(user, parentPermission(parent));
 }
 
 function parseParent(params: URLSearchParams | FormData): AttachmentParent | null {
@@ -28,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   const parent = parseParent(req.nextUrl.searchParams);
   if (!parent) return NextResponse.json({ error: 'Укажите родителя вложения' }, { status: 400 });
-  if (!hasPermission(user, parentPermission(parent))) {
+  if (!(await allowed(user, parent, 'read'))) {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 
@@ -45,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const parent = parseParent(form);
   if (!parent) return NextResponse.json({ error: 'Укажите родителя вложения' }, { status: 400 });
-  if (!hasPermission(user, parentPermission(parent))) {
+  if (!(await allowed(user, parent, 'update'))) {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 

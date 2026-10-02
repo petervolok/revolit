@@ -3,10 +3,10 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser, hasPermission } from '../../../../auth/session';
 import { prisma } from '../../../../data/prisma';
+import { canAccessRecord } from '../../../../entities/access';
 import { AttachmentError, getAttachmentFile } from '../../../../attachments/service';
 
 function permissionFor(row: { entityRecordId: string | null; processInstanceId: string | null }): string {
-  if (row.entityRecordId) return 'entities.manage';
   if (row.processInstanceId) return 'processes.manage';
   return 'tasks.use';
 }
@@ -17,7 +17,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const row = await prisma.attachment.findFirst({ where: { id: params.id, programId: user.programId } });
   if (!row) return NextResponse.json({ error: 'Вложение не найдено' }, { status: 404 });
-  if (!hasPermission(user, permissionFor(row))) {
+  const permitted = row.entityRecordId ? await canAccessRecord(user, row.entityRecordId, 'read') : hasPermission(user, permissionFor(row));
+  if (!permitted) {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 

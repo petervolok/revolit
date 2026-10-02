@@ -3,14 +3,16 @@
  * счётчик по значению одного поля, а не полноценная аналитика — сводных
  * таблиц, срезов по нескольким полям и произвольных диаграмм здесь нет.
  */
-import { listRecords, listTemplates } from '../entities/service';
+import { listRecords, listTemplatesFor } from '../entities/service';
+import type { ViewerUser } from '../entities/access';
 import type { FieldReport, ReportableTemplate } from './types';
 
 export class ReportError extends Error {}
 
 /** Сущности и их поля, по которым можно построить распределение */
-export async function listReportableTemplates(programId: string): Promise<ReportableTemplate[]> {
-  const templates = await listTemplates(programId);
+export async function listReportableTemplates(programId: string, viewer?: ViewerUser): Promise<ReportableTemplate[]> {
+  // Только сущности, доступные сотруднику, и без скрытых от него полей; считаются только доступные ему записи
+  const templates = await listTemplatesFor(programId, viewer);
 
   const result: ReportableTemplate[] = [];
   for (const t of templates) {
@@ -20,7 +22,7 @@ export async function listReportableTemplates(programId: string): Promise<Report
 
     if (groupableFields.length === 0) continue;
 
-    const records = await listRecords(programId, t.key);
+    const records = await listRecords(programId, t.key, undefined, viewer);
     result.push({ key: t.key, namePlural: t.namePlural, groupableFields, recordCount: records.length });
   }
 
@@ -28,8 +30,8 @@ export async function listReportableTemplates(programId: string): Promise<Report
 }
 
 /** Распределение записей сущности по значениям одного поля */
-export async function getFieldReport(programId: string, templateKey: string, fieldKey: string): Promise<FieldReport> {
-  const templates = await listTemplates(programId);
+export async function getFieldReport(programId: string, templateKey: string, fieldKey: string, viewer?: ViewerUser): Promise<FieldReport> {
+  const templates = await listTemplatesFor(programId, viewer);
   const template = templates.find((t) => t.key === templateKey);
   if (!template) throw new ReportError('Сущность не найдена');
 
@@ -38,7 +40,7 @@ export async function getFieldReport(programId: string, templateKey: string, fie
     throw new ReportError('По этому полю нельзя построить отчёт');
   }
 
-  const records = await listRecords(programId, templateKey);
+  const records = await listRecords(programId, templateKey, undefined, viewer);
   const counts = new Map<string, number>();
 
   for (const record of records) {

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: { key: string 
   if (!field) return NextResponse.json({ error: 'Укажите поле' }, { status: 400 });
 
   try {
-    const report = await getFieldReport(guard.user.programId, params.key, field);
+    const report = await getFieldReport(guard.user.programId, params.key, field, guard.user);
     return NextResponse.json(report);
   } catch (error) {
     if (error instanceof ReportError) return NextResponse.json({ error: error.message }, { status: 400 });
