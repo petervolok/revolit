@@ -26,6 +26,7 @@ interface FieldForm {
   required: boolean;
   choicesText: string;
   targetTemplateId: string;
+  onDelete: 'clear' | 'restrict';
   description: string;
   hasDefault: boolean;
   defaultText: string;
@@ -42,7 +43,7 @@ interface FieldForm {
 }
 
 const EMPTY_FORM: FieldForm = {
-  label: '', type: 'text', required: false, choicesText: '', targetTemplateId: '', description: '', hasDefault: false,
+  label: '', type: 'text', required: false, choicesText: '', targetTemplateId: '', onDelete: 'clear', description: '', hasDefault: false,
   defaultText: '', unique: false, readonly: false, hidden: false, min: '', max: '', minLength: '', maxLength: '',
   integer: false, pattern: '', message: '',
 };
@@ -114,7 +115,8 @@ export default function EntityFieldsClient({ templateKey }: { templateKey: strin
         (f.type === 'select' || f.type === 'multiselect') && f.options
           ? (f.options as { choices: string[] }).choices.join('\n')
           : '',
-      targetTemplateId: f.type === 'relation' && f.options ? (f.options as { targetTemplateId: string }).targetTemplateId : '',
+      targetTemplateId: (f.type === 'relation' || f.type === 'relations') && f.options ? (f.options as { targetTemplateId: string }).targetTemplateId : '',
+      onDelete: (f.options as { onDelete?: 'clear' | 'restrict' } | null)?.onDelete === 'restrict' ? 'restrict' : 'clear',
       description: f.description ?? '',
       hasDefault: f.hasDefault,
       defaultText: defaultToText(f),
@@ -137,6 +139,7 @@ export default function EntityFieldsClient({ templateKey }: { templateKey: strin
   const typeChoices = (): FieldType[] => {
     const all = Object.keys(FIELD_TYPE_LABELS) as FieldType[];
     if (!editingField || !hasRecords) return all;
+    if (editingField.type === 'relation' || editingField.type === 'relations') return ['relation', 'relations'];
     return STRING_TYPES.includes(editingField.type) ? STRING_TYPES : [editingField.type];
   };
 
@@ -153,8 +156,8 @@ export default function EntityFieldsClient({ templateKey }: { templateKey: strin
     const options =
       form.type === 'select' || form.type === 'multiselect'
         ? { choices: form.choicesText.split('\n').map((s) => s.trim()).filter(Boolean) }
-        : form.type === 'relation'
-          ? { targetTemplateId: form.targetTemplateId }
+        : form.type === 'relation' || form.type === 'relations'
+          ? { targetTemplateId: form.targetTemplateId, onDelete: form.onDelete }
           : null;
 
     const validation: FieldValidation = {};
@@ -418,20 +421,31 @@ export default function EntityFieldsClient({ templateKey }: { templateKey: strin
             </div>
           )}
 
-          {form.type === 'relation' && (
-            <Select
-              label="Связь с сущностью"
-              value={form.targetTemplateId}
-              disabled={Boolean(editingField) && hasRecords}
-              onChange={(e) => set('targetTemplateId', e.target.value)}
-            >
-              <option value="">Выберите сущность</option>
-              {others.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.namePlural}
-                </option>
-              ))}
-            </Select>
+          {(form.type === 'relation' || form.type === 'relations') && (
+            <>
+              <Select
+                label="Связь с сущностью"
+                value={form.targetTemplateId}
+                disabled={Boolean(editingField) && hasRecords}
+                onChange={(e) => set('targetTemplateId', e.target.value)}
+              >
+                <option value="">Выберите сущность</option>
+                {others.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.namePlural}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Если связанную запись удаляют"
+                hint="В связанной записи появится обратный список — кто на неё ссылается"
+                value={form.onDelete}
+                onChange={(e) => set('onDelete', e.target.value as 'clear' | 'restrict')}
+              >
+                <option value="clear">Убрать ссылку из записей</option>
+                <option value="restrict">Не давать удалять, пока на запись ссылаются</option>
+              </Select>
+            </>
           )}
 
           <Input

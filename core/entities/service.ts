@@ -13,8 +13,8 @@
 import type { Prisma } from '@prisma/client';
 import { prisma, runBatch } from '../data/prisma';
 import { newId } from '../data/ids';
-import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, FieldOptions, FieldType, FieldValidation } from './types';
-import { FIELD_TYPES, STRING_TYPES, UNIQUE_TYPES, slugify } from './types';
+import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, FieldOptions, FieldType, FieldValidation, ReverseRelationGroup } from './types';
+import { FIELD_TYPES, STRING_TYPES, UNIQUE_TYPES, recordLabel, slugify } from './types';
 
 export class EntityError extends Error {}
 
@@ -155,6 +155,11 @@ export async function renameTemplate(programId: string, key: string, input: Temp
 export async function deleteTemplate(programId: string, key: string): Promise<void> {
   const template = await getTemplate(programId, key);
   if (!template) throw new EntityError('Сущность не найдена');
+  const referencing = (await referencingFields(programId, template.id)).filter((r) => r.template.id !== template.id);
+  if (referencing.length > 0) {
+    const names = referencing.map((r) => `«${r.template.name}» → «${r.field.label}»`).join(', ');
+    throw new EntityError(`На эту сущность ссылаются поля других сущностей: ${names}. Сначала удалите эти поля`);
+  }
   if (template.hasRecords) {
     throw new EntityError('Нельзя удалить сущность, пока в ней есть записи');
   }
@@ -167,6 +172,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9 ()\-]{5,25}$/;
 const MAX_TEXT = 10_000;
 const MAX_JSON = 100_000;
+const MAX_RELATIONS = 200;
+
+function targetOf(field: Pick<EntityFieldDef, 'options'>): string | undefined {
+  return (field.options as { targetTemplateId?: string } | null)?.targetTemplateId;
+}
+
+function isRelationType(type: string): boolean {
+  return type === 'relation' || type === 'relations';
+}
 
 function isEmpty(raw: unknown): boolean {
   return raw === undefined || raw === null || raw === '' || (Array.isArray(raw) && raw.length === 0);
@@ -338,12 +352,21 @@ async function validateRecordData(
     }
 
     if (field.type === 'relation') {
-      const targetTemplateId = (field.options as { targetTemplateId: string } | null)?.targetTemplateId;
+      const targetTemplateId = targetOf(field);
       const exists = targetTemplateId
         ? await prisma.entityRecord.findFirst({ where: { id: String(raw), templateId: targetTemplateId, programId } })
         : null;
       if (!exists) throw new EntityError(`Связанная запись для поля «${field.label}» не найдена`);
       cleaned[field.key] = String(raw);
+    } else if (field.type === 'relations') {
+      const ids = [...new Set((Array.isArray(raw) ? raw : [raw]).map(String))];
+      if (ids.length > MAX_RELATIONS) throw new EntityError(`Поле «${field.label}»: не больше ${MAX_RELATIONS} связанных записей`);
+      const targetTemplateId = targetOf(field);
+      const found = targetTemplateId
+        ? await prisma.entityRecord.count({ where: { id: { in: ids }, templateId: targetTemplateId, programId } })
+        : 0;
+      if (found !== ids.length) throw new EntityError(`Связанные записи для поля «${field.label}» не найдены`);
+      cleaned[field.key] = ids;
     } else if (field.type === 'user') {
       const exists = await prisma.user.findFirst({ where: { id: String(raw), programId } });
       if (!exists) throw new EntityError(`Сотрудник для поля «${field.label}» не найден`);
@@ -405,10 +428,13 @@ function assertFieldPayload(input: FieldInput): void {
       throw new EntityError('Укажите варианты списка');
     }
   }
-  if (input.type === 'relation') {
-    const targetTemplateId = (input.options as { targetTemplateId?: unknown })?.targetTemplateId;
-    if (typeof targetTemplateId !== 'string' || !targetTemplateId) {
+  if (isRelationType(input.type)) {
+    const options = input.options as { targetTemplateId?: unknown; onDelete?: unknown } | null;
+    if (typeof options?.targetTemplateId !== 'string' || !options.targetTemplateId) {
       throw new EntityError('Укажите, с какой сущностью связь');
+    }
+    if (options.onDelete !== undefined && options.onDelete !== 'clear' && options.onDelete !== 'restrict') {
+      throw new EntityError('Неизвестное правило удаления связанной записи');
     }
   }
   if ((input.description ?? '').length > 300) throw new EntityError('Подсказка к полю длиннее 300 знаков');
@@ -442,7 +468,7 @@ function assertFieldPayload(input: FieldInput): void {
   }
 
   if (input.hasDefault) {
-    if (input.type === 'relation' || input.type === 'user') {
+    if (isRelationType(input.type) || input.type === 'user') {
       throw new EntityError('Для связи и сотрудника значение по умолчанию не задаётся');
     }
     // Значение по умолчанию обязано проходить собственные правила поля
@@ -560,6 +586,28 @@ export async function addField(programId: string, templateKey: string, input: Fi
   return getTemplate(programId, templateKey) as Promise<EntityTemplateDef>;
 }
 
+/** Связь с одной записью ⇄ связь с несколькими: значения в записях переписываются под новый вид */
+async function convertRelationShape(templateId: string, field: EntityFieldDef, to: FieldType): Promise<void> {
+  if (to === 'relation') {
+    let tooMany = 0;
+    await forEachRecordChunk(templateId, async (rows) => {
+      tooMany += rows.filter((r) => Array.isArray(r.data[field.key]) && (r.data[field.key] as unknown[]).length > 1).length;
+    });
+    if (tooMany > 0) throw new EntityError(`У ${tooMany} записей несколько связанных записей — перейти к связи с одной нельзя`);
+  }
+  await forEachRecordChunk(templateId, async (rows) => {
+    await rewriteRecords(
+      rows
+        .filter((r) => !isEmpty(r.data[field.key]))
+        .map((r) => {
+          const value = r.data[field.key];
+          const next = to === 'relations' ? (Array.isArray(value) ? value : [value]) : Array.isArray(value) ? value[0] : value;
+          return { id: r.id, data: { ...r.data, [field.key]: next } };
+        })
+    );
+  });
+}
+
 export async function updateField(
   programId: string,
   templateKey: string,
@@ -575,13 +623,17 @@ export async function updateField(
   const { defaultV, ...columns } = fieldColumns(input);
 
   if (template.hasRecords) {
-    const sameFamily = field.type === input.type || (STRING_TYPES.includes(field.type) && STRING_TYPES.includes(input.type));
-    if (!sameFamily) throw new EntityError('Тип поля нельзя изменить, пока в сущности есть записи (текстовые типы меняются между собой)');
+    const sameFamily =
+      field.type === input.type ||
+      (STRING_TYPES.includes(field.type) && STRING_TYPES.includes(input.type)) ||
+      (isRelationType(field.type) && isRelationType(input.type));
+    if (!sameFamily) throw new EntityError('Тип поля нельзя изменить, пока в сущности есть записи (текстовые типы меняются между собой, связи — между собой)');
 
-    if (field.type === 'relation') {
-      const was = (field.options as { targetTemplateId?: string } | null)?.targetTemplateId;
-      const now = (input.options as { targetTemplateId?: string } | null)?.targetTemplateId;
-      if (was !== now) throw new EntityError('Связь нельзя перенаправить на другую сущность, пока есть записи');
+    if (isRelationType(field.type)) {
+      if (targetOf(field) !== targetOf({ options: input.options ?? null })) {
+        throw new EntityError('Связь нельзя перенаправить на другую сущность, пока есть записи');
+      }
+      if (field.type !== input.type) await convertRelationShape(template.id, field, input.type);
     }
 
     if (field.type === 'select' || field.type === 'multiselect') {
@@ -737,8 +789,98 @@ export async function updateRecord(
   return { id: row.id, data: row.data as Record<string, unknown>, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
 }
 
+/** Поля-связи всех сущностей программы, которые указывают на сущность templateId */
+async function referencingFields(
+  programId: string,
+  templateId: string
+): Promise<{ template: { id: string; key: string; name: string; namePlural: string; displayField: string | null }; field: EntityFieldDef }[]> {
+  const rows = await prisma.entityField.findMany({
+    where: { type: { in: ['relation', 'relations'] }, template: { programId } },
+    include: { template: true },
+  });
+  return rows
+    .map((r) => ({
+      template: { id: r.template.id, key: r.template.key, name: r.template.name, namePlural: r.template.namePlural, displayField: r.template.displayField },
+      field: toFieldDef(r),
+    }))
+    .filter((r) => targetOf(r.field) === templateId);
+}
+
+/** Записи, в которых поле-связь указывает на запись recordId */
+function referencingWhere(programId: string, templateId: string, field: EntityFieldDef, recordId: string): Prisma.EntityRecordWhereInput {
+  return {
+    programId,
+    templateId,
+    data:
+      field.type === 'relations'
+        ? { path: [field.key], array_contains: [recordId] }
+        : { path: [field.key], equals: recordId },
+  };
+}
+
+const REVERSE_LIMIT = 50;
+
+/** Обратные связи: кто ссылается на запись (по каждому полю-связи отдельно) */
+export async function listReverse(programId: string, templateKey: string, recordId: string): Promise<ReverseRelationGroup[]> {
+  const template = await prisma.entityTemplate.findUnique({ where: { programId_key: { programId, key: templateKey } } });
+  if (!template) throw new EntityError('Сущность не найдена');
+  const record = await prisma.entityRecord.findFirst({ where: { id: recordId, templateId: template.id, programId }, select: { id: true } });
+  if (!record) throw new EntityError('Запись не найдена');
+
+  const groups: ReverseRelationGroup[] = [];
+  const cache = new Map<string, EntityTemplateDef>();
+  for (const ref of await referencingFields(programId, template.id)) {
+    const where = referencingWhere(programId, ref.template.id, ref.field, recordId);
+    const total = await prisma.entityRecord.count({ where });
+    if (total === 0) continue;
+    const rows = await prisma.entityRecord.findMany({ where, orderBy: { createdAt: 'desc' }, take: REVERSE_LIMIT });
+    let source = cache.get(ref.template.id);
+    if (!source) {
+      source = (await getTemplate(programId, ref.template.key)) as EntityTemplateDef;
+      cache.set(ref.template.id, source);
+    }
+    const fields = source.fields;
+    const displayField = source.displayField;
+    groups.push({
+      template: { key: ref.template.key, name: ref.template.name, namePlural: ref.template.namePlural },
+      field: { key: ref.field.key, label: ref.field.label },
+      total,
+      records: rows.map((r) => ({
+        id: r.id,
+        label: recordLabel({ id: r.id, data: r.data as Record<string, unknown>, createdAt: '', updatedAt: '' }, fields, displayField),
+      })),
+    });
+  }
+  return groups;
+}
+
 export async function deleteRecord(programId: string, templateKey: string, id: string): Promise<void> {
   const template = await prisma.entityTemplate.findUnique({ where: { programId_key: { programId, key: templateKey } } });
   if (!template) throw new EntityError('Сущность не найдена');
+
+  // Ссылки на удаляемую запись: либо запрещают удаление, либо убираются из записей
+  const cleanups: { id: string; data: Record<string, unknown> }[] = [];
+  for (const ref of await referencingFields(programId, template.id)) {
+    const where = referencingWhere(programId, ref.template.id, ref.field, id);
+    const restrict = (ref.field.options as { onDelete?: string } | null)?.onDelete === 'restrict';
+    const referencing = await prisma.entityRecord.findMany({ where, select: { id: true, data: true } });
+    for (const r of referencing) {
+      if (r.id === id) continue;
+      const data = { ...(r.data as Record<string, unknown>) };
+      const value = data[ref.field.key];
+      const left = Array.isArray(value) ? value.filter((v) => v !== id) : [];
+      const becomesEmpty = left.length === 0;
+      if (restrict || (ref.field.required && becomesEmpty)) {
+        throw new EntityError(
+          `Запись нельзя удалить: на неё ссылаются записи «${ref.template.namePlural}» (поле «${ref.field.label}»${restrict ? '' : ', обязательное'})`
+        );
+      }
+      if (becomesEmpty) delete data[ref.field.key];
+      else data[ref.field.key] = left;
+      cleanups.push({ id: r.id, data });
+    }
+  }
+  for (let i = 0; i < cleanups.length; i += CHUNK) await rewriteRecords(cleanups.slice(i, i + CHUNK));
+
   await prisma.entityRecord.deleteMany({ where: { id, templateId: template.id, programId } });
 }

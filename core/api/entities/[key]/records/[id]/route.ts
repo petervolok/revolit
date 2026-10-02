@@ -31,7 +31,12 @@ export async function DELETE(
   const guard = await requirePermission('entities.manage');
   if (isDenied(guard)) return guard.response;
 
-  await deleteRecord(guard.user.programId, params.key, params.id);
+  try {
+    await deleteRecord(guard.user.programId, params.key, params.id);
+  } catch (error) {
+    if (error instanceof EntityError) return NextResponse.json({ error: error.message }, { status: 409 });
+    throw error;
+  }
 
   await writeAudit({
     programId: guard.user.programId,

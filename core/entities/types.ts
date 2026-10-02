@@ -18,6 +18,7 @@ export type FieldType =
   | 'select'
   | 'multiselect'
   | 'relation'
+  | 'relations'
   | 'user'
   | 'json'
   | 'email'
@@ -26,7 +27,7 @@ export type FieldType =
 
 export const FIELD_TYPES: FieldType[] = [
   'text', 'longtext', 'number', 'boolean', 'date', 'datetime', 'select', 'multiselect',
-  'relation', 'user', 'json', 'email', 'url', 'phone',
+  'relation', 'relations', 'user', 'json', 'email', 'url', 'phone',
 ];
 
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
@@ -38,7 +39,8 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   datetime: 'Дата и время',
   select: 'Список значений',
   multiselect: 'Список — можно выбрать несколько',
-  relation: 'Связь с другой сущностью',
+  relation: 'Связь с одной записью другой сущности',
+  relations: 'Связь с несколькими записями (многие ко многим)',
   user: 'Сотрудник программы',
   json: 'JSON',
   email: 'Почта',
@@ -55,8 +57,22 @@ export const UNIQUE_TYPES: FieldType[] = ['text', 'email', 'url', 'phone', 'numb
 /** Настройки, зависящие от типа поля */
 export type FieldOptions =
   | { choices: string[] }
-  | { targetTemplateId: string }
+  | { targetTemplateId: string; onDelete?: RelationOnDelete }
   | null;
+
+/**
+ * Что делать со ссылками, когда удаляют запись, на которую они указывают: убрать ссылку из записей
+ * (по умолчанию) или не давать удалять, пока на запись кто-то ссылается
+ */
+export type RelationOnDelete = 'clear' | 'restrict';
+
+/** Записи других сущностей, которые ссылаются на данную запись, — по одному полю-связи */
+export interface ReverseRelationGroup {
+  template: { key: string; name: string; namePlural: string };
+  field: { key: string; label: string };
+  total: number;
+  records: { id: string; label: string }[];
+}
 
 /** Правила проверки значения; применяются только к подходящим типам */
 export interface FieldValidation {

@@ -14,7 +14,10 @@ import {
   createRecord,
   createTemplate,
   getTemplate,
+  deleteRecord,
+  deleteTemplate,
   listRecords,
+  listReverse,
   removeField,
   renameTemplate,
   reorderFields,
@@ -166,6 +169,73 @@ async function main(): Promise<void> {
   check('удаление поля стирает его значения во всех записях', stripped.every((r) => !('meta' in r.data)) && stripped.every((r) => 'email' in r.data));
   t = await removeField(P, KEY, field('Code').id);
   check('удаление поля-заголовка сбрасывает заголовок', t.displayField === null);
+
+  // — Связи «многие ко многим», обратные связи, удаление связанных записей (строка 2) —
+  const company = await createTemplate(P, { name: 'Компания', namePlural: 'Компании' });
+  await addField(P, company.key, { label: 'Title', type: 'text', required: true });
+  const c1 = await createRecord(P, company.key, { title: 'Альфа' });
+  const c2 = await createRecord(P, company.key, { title: 'Бета' });
+  const c3 = await createRecord(P, company.key, { title: 'Гамма' });
+
+  await add('Firms', 'relations', { options: { targetTemplateId: company.id } });
+  await add('Main', 'relation', { options: { targetTemplateId: company.id, onDelete: 'restrict' } });
+  const withFirms = async (name: string, ids: unknown, extra: Record<string, unknown> = {}) =>
+    createRecord(P, KEY, { name, email: `${Math.random().toString(36).slice(2, 9)}@example.com`, firms: ids, ...extra });
+
+  const m1 = await withFirms('Связный', [c1.id, c2.id, c1.id]);
+  check('связь с несколькими записями: значения хранятся списком без повторов', JSON.stringify(m1.data.firms) === JSON.stringify([c1.id, c2.id]));
+  check('чужой или несуществующий id в связи отклонён', (await failsWith(() => withFirms('Хх', [c1.id, 'нет-такой'])))?.includes('не найдены') === true);
+  check('запись другой сущности нельзя поставить в связь', (await failsWith(() => withFirms('Хх', [m1.id])))?.includes('не найдены') === true);
+  check('значение по умолчанию для связи отклонено', (await failsWith(() => addField(P, KEY, { label: 'Bad4', type: 'relations', required: false, options: { targetTemplateId: company.id }, hasDefault: true, defaultValue: [] })))?.includes('по умолчанию не задаётся') === true);
+  check('неизвестное правило удаления отклонено', (await failsWith(() => addField(P, KEY, { label: 'Bad5', type: 'relations', required: false, options: { targetTemplateId: company.id, onDelete: 'boom' } as never })))?.includes('правило удаления') === true);
+
+  const m2 = await withFirms('Второй', [c2.id, c3.id]);
+  const rev = await listReverse(P, company.key, c2.id);
+  const revFirms = rev.find((g) => g.field.key === 'firms');
+  check('обратная связь: компания видит контакты, которые на неё ссылаются', revFirms !== undefined && revFirms.total === 2 && revFirms.template.key === KEY);
+  check('обратная связь: подпись записи берётся по полю-заголовку сущности', revFirms !== undefined && revFirms.records.some((r) => r.label === 'Связный' || r.label.includes('example.com')));
+  check('у записи без ссылок обратных связей нет', (await listReverse(P, company.key, (await createRecord(P, company.key, { title: 'Одинокая' })).id)).length === 0);
+
+  // правка списка связей
+  const upd = await updateRecord(P, KEY, m1.id, { ...m1.data, firms: [c3.id] });
+  check('правка меняет набор связанных записей', JSON.stringify(upd.data.firms) === JSON.stringify([c3.id]));
+  await updateRecord(P, KEY, m1.id, { ...upd.data, firms: [c1.id, c2.id] });
+
+  // удаление: ссылки убираются
+  await deleteRecord(P, company.key, c1.id);
+  const afterDel = (await listRecords(P, KEY)).find((r) => r.id === m1.id)!;
+  check('удаление записи убирает ссылку на неё из списка связей, остальные остаются', JSON.stringify(afterDel.data.firms) === JSON.stringify([c2.id]));
+  await deleteRecord(P, company.key, c2.id);
+  const afterDel2 = (await listRecords(P, KEY)).find((r) => r.id === m1.id)!;
+  check('когда ссылок не осталось, значение поля убирается целиком', !('firms' in afterDel2.data));
+
+  // удаление: запрет по правилу поля
+  const m3 = await createRecord(P, KEY, { name: 'С главной', email: 'main@example.com', main: c3.id });
+  const blocked = await failsWith(() => deleteRecord(P, company.key, c3.id));
+  check('правило «не давать удалять» блокирует удаление, пока ссылаются', blocked?.includes('нельзя удалить') === true);
+  check('при блокировке ничего не изменено', (await listRecords(P, company.key)).some((r) => r.id === c3.id) && Array.isArray((await listRecords(P, KEY)).find((r) => r.id === m2.id)!.data.firms));
+  await updateRecord(P, KEY, m3.id, { ...m3.data, main: '' });
+  await deleteRecord(P, company.key, c3.id);
+  check('после снятия ссылки запись удаляется', !(await listRecords(P, company.key)).some((r) => r.id === c3.id));
+
+  // удаление сущности, на которую ссылаются поля
+  check('сущность, на которую ссылаются поля, удалить нельзя', (await failsWith(() => deleteTemplate(P, company.key)))?.includes('ссылаются') === true);
+
+  // смена вида связи при наличии записей
+  const firmsId = field('Firms').id;
+  const c4 = await createRecord(P, company.key, { title: 'Дельта' });
+  const c5 = await createRecord(P, company.key, { title: 'Эпсилон' });
+  await updateRecord(P, KEY, m2.id, { ...(await listRecords(P, KEY)).find((r) => r.id === m2.id)!.data, firms: [c4.id, c5.id] });
+  const tooMany = await failsWith(() => updateField(P, KEY, firmsId, { label: 'Firms', type: 'relation', required: false, options: { targetTemplateId: company.id } }));
+  check('переход к связи с одной записью отклонён, если где-то записей несколько', tooMany?.includes('несколько') === true);
+  check('перенаправить связь на другую сущность при записях нельзя', (await failsWith(() => updateField(P, KEY, firmsId, { label: 'Firms', type: 'relations', required: false, options: { targetTemplateId: t.id } })))?.includes('перенаправить') === true);
+  await updateRecord(P, KEY, m2.id, { ...(await listRecords(P, KEY)).find((r) => r.id === m2.id)!.data, firms: [c4.id] });
+  t = await updateField(P, KEY, firmsId, { label: 'Firms', type: 'relation', required: false, options: { targetTemplateId: company.id } });
+  const single = (await listRecords(P, KEY)).find((r) => r.id === m2.id)!;
+  check('связь с несколькими → с одной: список превращается в одно значение', field('Firms').type === 'relation' && single.data.firms === c4.id);
+  t = await updateField(P, KEY, firmsId, { label: 'Firms', type: 'relations', required: false, options: { targetTemplateId: company.id } });
+  const back = (await listRecords(P, KEY)).find((r) => r.id === m2.id)!;
+  check('связь с одной → с несколькими: значение превращается в список', field('Firms').type === 'relations' && JSON.stringify(back.data.firms) === JSON.stringify([c4.id]));
 
   // Уборка
   await basePrisma.entityRecord.deleteMany({ where: { programId: P } });

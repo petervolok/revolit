@@ -12,7 +12,7 @@ import Select from '../ui/Select';
 import SlideOver from '../ui/SlideOver';
 import AttachmentsSection from '../attachments/AttachmentsSection';
 import { displayValue, recordLabel } from '../entities/types';
-import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef } from '../entities/types';
+import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, ReverseRelationGroup } from '../entities/types';
 import type { LinkedInstanceDef } from '../processes/types';
 import type { TaskDef } from '../tasks/types';
 
@@ -30,7 +30,7 @@ function toLocalInput(iso: unknown): string {
 
 /** Начальное значение поля в форме: из записи, а для новой — значение по умолчанию */
 function formValueOf(f: EntityFieldDef, v: unknown): FormValue {
-  if (f.type === 'multiselect') return Array.isArray(v) ? v.map(String) : [];
+  if (f.type === 'multiselect' || f.type === 'relations') return Array.isArray(v) ? v.map(String) : [];
   if (f.type === 'boolean') return v === true;
   if (v === undefined || v === null) return '';
   if (f.type === 'date') return String(v).slice(0, 10);
@@ -61,6 +61,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
   const [programUsers, setProgramUsers] = useState<ProgramUser[]>([]);
 
   const [editing, setEditing] = useState<EntityRecordDef | null>(null);
+  const [reverse, setReverse] = useState<ReverseRelationGroup[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<Record<string, FormValue>>({});
   const [formError, setFormError] = useState('');
@@ -91,7 +92,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
   // Подгружаем записи целевых сущностей для полей-связей — только когда они есть
   useEffect(() => {
     if (!template) return;
-    const relationFields = template.fields.filter((f) => f.type === 'relation');
+    const relationFields = template.fields.filter((f) => f.type === 'relation' || f.type === 'relations');
     if (relationFields.length === 0) return;
 
     (async () => {
@@ -169,6 +170,10 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
     fetch(`/api/entity-records/${r.id}/instances`)
       .then((res) => (res.ok ? res.json() : []))
       .then(setLinkedInstances);
+    setReverse([]);
+    fetch(`/api/entities/${templateKey}/records/${r.id}/related`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setReverse);
     setLinkedTasks([]);
     fetch(`/api/tasks?entityRecordId=${r.id}&includeDone=1`)
       .then((res) => (res.ok ? res.json() : []))
@@ -212,7 +217,8 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
     if (!confirm('Удалить запись?')) return;
     const res = await fetch(`/api/entities/${templateKey}/records/${r.id}`, { method: 'DELETE' });
     if (!res.ok) {
-      setBanner({ tone: 'err', text: 'Не удалось удалить' });
+      const body = await res.json().catch(() => ({}));
+      setBanner({ tone: 'err', text: typeof body.error === 'string' ? body.error : 'Не удалось удалить' });
       return;
     }
     setBanner({ tone: 'ok', text: 'Запись удалена' });
@@ -230,6 +236,10 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
       const targetId = (field.options as { targetTemplateId: string } | null)?.targetTemplateId;
       const found = targetId ? relationOptions[targetId]?.find((o) => o.id === value) : null;
       return found?.label ?? String(value);
+    }
+    if (field.type === 'relations') {
+      const targetId = (field.options as { targetTemplateId: string } | null)?.targetTemplateId;
+      return (value as string[]).map((id) => (targetId ? relationOptions[targetId]?.find((o) => o.id === id)?.label : undefined) ?? id).join(', ');
     }
     if (field.type === 'user') {
       const found = programUsers.find((u) => u.id === value);
@@ -467,6 +477,27 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
               );
             }
 
+            if (f.type === 'relations') {
+              const targetId = (f.options as { targetTemplateId: string } | null)?.targetTemplateId;
+              const options = targetId ? relationOptions[targetId] ?? [] : [];
+              const selected = Array.isArray(value) ? value : [];
+              const toggle = (id: string, checked: boolean) => {
+                setValue(checked ? [...selected, id] : selected.filter((c) => c !== id));
+              };
+              return (
+                <div key={f.id}>
+                  <span className="mb-1.5 block text-[13px] font-medium text-ink">{label}</span>
+                  <div className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line px-2 py-2">
+                    {options.length === 0 && <span className="text-xs text-ink-muted">Нет записей для связи</span>}
+                    {options.map((o) => (
+                      <Checkbox key={o.id} label={o.label} disabled={locked} checked={selected.includes(o.id)} onChange={(v) => toggle(o.id, v)} />
+                    ))}
+                  </div>
+                  {f.description && <p className="mt-1.5 text-xs text-ink-muted">{f.description}</p>}
+                </div>
+              );
+            }
+
             if (f.type === 'user') {
               return (
                 <Select
@@ -527,6 +558,27 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
                     <Link2 className="h-3.5 w-3.5 shrink-0" />
                     {li.title} — {li.templateName} · {li.stageName}
                   </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {editing && reverse.length > 0 && (
+            <div>
+              <h3 className="mb-1.5 text-[13px] font-semibold text-ink">Связанные записи (ссылаются на эту)</h3>
+              <div className="flex flex-col gap-2">
+                {reverse.map((g) => (
+                  <div key={`${g.template.key}.${g.field.key}`}>
+                    <p className="text-xs text-ink-muted">
+                      {g.template.namePlural} — поле «{g.field.label}» ({g.total})
+                    </p>
+                    <ul className="mt-0.5 list-inside list-disc text-[13px] text-ink">
+                      {g.records.map((r) => (
+                        <li key={r.id}>{r.label}</li>
+                      ))}
+                      {g.total > g.records.length && <li className="list-none text-xs text-ink-muted">и ещё {g.total - g.records.length}…</li>}
+                    </ul>
+                  </div>
                 ))}
               </div>
             </div>
