@@ -1,25 +1,26 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission, isDenied } from '../../../../../auth/guard';
+import { requireSignedIn, isUserDenied, entityErrorResponse } from '../../../../../entities/guard';
 import { writeAudit } from '../../../../../auth/audit';
 import { clientIp, userAgent } from '../../../../../utils/request';
-import { deleteRecord, updateRecord, EntityError } from '../../../../../entities/service';
+import { deleteRecord, updateRecord } from '../../../../../entities/service';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { key: string; id: string } }
 ) {
-  const guard = await requirePermission('entities.manage');
-  if (isDenied(guard)) return guard.response;
+  const guard = await requireSignedIn();
+  if (isUserDenied(guard)) return guard.response;
 
   const body = await req.json().catch(() => ({}));
 
   try {
-    const record = await updateRecord(guard.user.programId, params.key, params.id, body);
+    const record = await updateRecord(guard.user.programId, params.key, params.id, body, guard.user);
     return NextResponse.json(record);
   } catch (error) {
-    if (error instanceof EntityError) return NextResponse.json({ error: error.message }, { status: 400 });
+    const response = entityErrorResponse(error);
+    if (response) return response;
     throw error;
   }
 }
@@ -28,13 +29,14 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { key: string; id: string } }
 ) {
-  const guard = await requirePermission('entities.manage');
-  if (isDenied(guard)) return guard.response;
+  const guard = await requireSignedIn();
+  if (isUserDenied(guard)) return guard.response;
 
   try {
-    await deleteRecord(guard.user.programId, params.key, params.id);
+    await deleteRecord(guard.user.programId, params.key, params.id, guard.user);
   } catch (error) {
-    if (error instanceof EntityError) return NextResponse.json({ error: error.message }, { status: 409 });
+    const response = entityErrorResponse(error, 409);
+    if (response) return response;
     throw error;
   }
 

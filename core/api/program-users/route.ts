@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { requirePermission, isDenied } from '../../auth/guard';
+import { requireSignedIn, isUserDenied } from '../../entities/guard';
+import { hasAnyEntityAccess } from '../../entities/access';
 import { prisma } from '../../data/prisma';
 
 /**
@@ -11,8 +12,9 @@ import { prisma } from '../../data/prisma';
  * даже без доступа к разделу «Пользователи».
  */
 export async function GET() {
-  const guard = await requirePermission('entities.manage');
-  if (isDenied(guard)) return guard.response;
+  const guard = await requireSignedIn();
+  if (isUserDenied(guard)) return guard.response;
+  if (!(await hasAnyEntityAccess(guard.user))) return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
 
   const users = await prisma.user.findMany({
     where: { programId: guard.user.programId, isActive: true },

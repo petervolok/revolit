@@ -15,10 +15,14 @@ import { prisma, runBatch } from '../data/prisma';
 import { newId } from '../data/ids';
 import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef, FieldOptions, FieldType, FieldValidation, ReverseRelationGroup } from './types';
 import { applyQuery } from './query';
+import { AccessError, assertAccess, assertCanTouchRecord, readableTemplateIds, resolveAccess, sanitizeRecord, viewTemplate } from './access';
+import type { ViewerAccess, ViewerUser } from './access';
 import type { RecordPage, RecordQuery } from './query';
 import { FIELD_TYPES, STRING_TYPES, UNIQUE_TYPES, recordLabel, slugify } from './types';
 
 export class EntityError extends Error {}
+
+export { AccessError };
 
 type FieldRow = {
   id: string; key: string; label: string; type: string; required: boolean; order: number; options: unknown;
@@ -72,6 +76,19 @@ export async function listTemplates(programId: string): Promise<EntityTemplateDe
     orderBy: { createdAt: 'asc' },
   });
   return Promise.all(rows.map(toTemplateDef));
+}
+
+/** Сущности, видимые сотруднику: при ограничениях — только доступные для чтения и без скрытых полей */
+export async function listTemplatesFor(programId: string, viewer?: ViewerUser): Promise<EntityTemplateDef[]> {
+  const all = await listTemplates(programId);
+  if (!viewer) return all;
+  const ids = await readableTemplateIds(viewer);
+  if (ids === 'all') return all;
+  const out: EntityTemplateDef[] = [];
+  for (const template of all) {
+    if (ids.has(template.id)) out.push(viewTemplate(template, await resolveAccess(viewer, template.id)));
+  }
+  return out;
 }
 
 export async function getTemplate(programId: string, key: string): Promise<EntityTemplateDef | null> {
@@ -736,31 +753,59 @@ export async function reorderFields(
 
 // ─── Записи ───
 
-export async function listRecords(programId: string, templateKey: string, limit?: number): Promise<EntityRecordDef[]> {
+function toRecordDef(r: { id: string; data: unknown; createdById: string | null; createdAt: Date; updatedAt: Date }): EntityRecordDef {
+  return {
+    id: r.id,
+    data: r.data as Record<string, unknown>,
+    createdById: r.createdById,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  };
+}
+
+/** Права сотрудника на сущность; без сотрудника (вызов самой системы) — без ограничений */
+async function accessOf(viewer: ViewerUser | undefined, templateId: string): Promise<ViewerAccess | null> {
+  return viewer ? resolveAccess(viewer, templateId) : null;
+}
+
+/**
+ * Структура сущности для сотрудника: проверяется право на просмотр, скрытые поля убраны.
+ * Без сотрудника возвращает структуру целиком.
+ */
+export async function getTemplateFor(programId: string, key: string, viewer?: ViewerUser): Promise<EntityTemplateDef | null> {
+  const template = await getTemplate(programId, key);
+  if (!template) return null;
+  const access = await accessOf(viewer, template.id);
+  assertAccess(access, 'read');
+  return viewTemplate(template, access);
+}
+
+export async function listRecords(programId: string, templateKey: string, limit?: number, viewer?: ViewerUser): Promise<EntityRecordDef[]> {
   const template = await prisma.entityTemplate.findUnique({ where: { programId_key: { programId, key: templateKey } } });
   if (!template) throw new EntityError('Сущность не найдена');
+  const access = await accessOf(viewer, template.id);
+  assertAccess(access, 'read');
 
   const rows = await prisma.entityRecord.findMany({
-    where: { templateId: template.id },
+    where: { templateId: template.id, ...(access?.own ? { createdById: access.userId } : {}) },
     orderBy: { createdAt: 'desc' },
     ...(limit ? { take: limit } : {}),
   });
-  return rows.map((r) => ({
-    id: r.id,
-    data: r.data as Record<string, unknown>,
-    createdAt: r.createdAt.toISOString(),
-    updatedAt: r.updatedAt.toISOString(),
-  }));
+  return rows.map((r) => sanitizeRecord(toRecordDef(r), access));
 }
 
 /** Предел числа записей, которые сервер просматривает при поиске и сортировке одной сущности */
 export const QUERY_SCAN_LIMIT = 50_000;
 
-/** Записи с поиском, фильтрами, сортировкой и страницей — браузеру уходит только одна страница */
-export async function queryRecords(programId: string, templateKey: string, query: RecordQuery): Promise<RecordPage> {
-  const template = await getTemplate(programId, templateKey);
+/**
+ * Записи с поиском, фильтрами, сортировкой и страницей — браузеру уходит только одна страница.
+ * Чужие записи отсеиваются и скрытые поля убираются ДО поиска, фильтров и сортировки: по скрытому полю
+ * нельзя ни найти, ни отфильтровать, ни отсортировать — иначе по ответам можно было бы угадать его значения.
+ */
+export async function queryRecords(programId: string, templateKey: string, query: RecordQuery, viewer?: ViewerUser): Promise<RecordPage> {
+  const template = await getTemplateFor(programId, templateKey, viewer);
   if (!template) throw new EntityError('Сущность не найдена');
-  const all = await listRecords(programId, templateKey, QUERY_SCAN_LIMIT);
+  const all = await listRecords(programId, templateKey, QUERY_SCAN_LIMIT, viewer);
   try {
     return applyQuery(all, template.fields, query);
   } catch (error) {
@@ -771,31 +816,49 @@ export async function queryRecords(programId: string, templateKey: string, query
 export async function createRecord(
   programId: string,
   templateKey: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  viewer?: ViewerUser
 ): Promise<EntityRecordDef> {
   const template = await getTemplate(programId, templateKey);
   if (!template) throw new EntityError('Сущность не найдена');
+  const access = await accessOf(viewer, template.id);
+  assertAccess(access, 'create');
 
-  const data = await validateRecordData(programId, template.id, template.fields, input, { applyDefaults: true });
+  // Скрытые и «только чтение» поля сотрудник при создании не задаёт: берутся значения по умолчанию
+  let source = input;
+  if (access) {
+    source = { ...input };
+    for (const key of [...access.hidden, ...access.readonly]) delete source[key];
+  }
+
+  const data = await validateRecordData(programId, template.id, template.fields, source, { applyDefaults: true });
   const row = await prisma.entityRecord.create({
-    data: { id: newId(), programId, templateId: template.id, data: data as Prisma.InputJsonValue },
+    data: { id: newId(), programId, templateId: template.id, data: data as Prisma.InputJsonValue, createdById: viewer?.id ?? null },
   });
-  return { id: row.id, data: row.data as Record<string, unknown>, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
+  return sanitizeRecord(toRecordDef(row), access);
 }
 
 export async function updateRecord(
   programId: string,
   templateKey: string,
   id: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  viewer?: ViewerUser
 ): Promise<EntityRecordDef> {
   const template = await getTemplate(programId, templateKey);
   if (!template) throw new EntityError('Сущность не найдена');
+  const access = await accessOf(viewer, template.id);
+  assertAccess(access, 'update');
 
   const existing = await prisma.entityRecord.findFirst({ where: { id, templateId: template.id, programId } });
   if (!existing) throw new EntityError('Запись не найдена');
+  assertCanTouchRecord(access, existing);
 
-  const data = await validateRecordData(programId, template.id, template.fields, input, {
+  // Скрытые и «только чтение» поля для сотрудника неизменны: сохраняется прежнее значение
+  const frozen = new Set(access ? [...access.hidden, ...access.readonly] : []);
+  const fields = frozen.size > 0 ? template.fields.map((f) => (frozen.has(f.key) ? { ...f, readonly: true } : f)) : template.fields;
+
+  const data = await validateRecordData(programId, template.id, fields, input, {
     applyDefaults: false,
     existing: existing.data as Record<string, unknown>,
     excludeId: id,
@@ -804,7 +867,7 @@ export async function updateRecord(
     where: { id },
     data: { data: data as Prisma.InputJsonValue },
   });
-  return { id: row.id, data: row.data as Record<string, unknown>, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
+  return sanitizeRecord(toRecordDef(row), access);
 }
 
 /** Поля-связи всех сущностей программы, которые указывают на сущность templateId */
@@ -839,16 +902,25 @@ function referencingWhere(programId: string, templateId: string, field: EntityFi
 const REVERSE_LIMIT = 50;
 
 /** Обратные связи: кто ссылается на запись (по каждому полю-связи отдельно) */
-export async function listReverse(programId: string, templateKey: string, recordId: string): Promise<ReverseRelationGroup[]> {
+export async function listReverse(programId: string, templateKey: string, recordId: string, viewer?: ViewerUser): Promise<ReverseRelationGroup[]> {
   const template = await prisma.entityTemplate.findUnique({ where: { programId_key: { programId, key: templateKey } } });
   if (!template) throw new EntityError('Сущность не найдена');
-  const record = await prisma.entityRecord.findFirst({ where: { id: recordId, templateId: template.id, programId }, select: { id: true } });
+  const access = await accessOf(viewer, template.id);
+  assertAccess(access, 'read');
+  const record = await prisma.entityRecord.findFirst({ where: { id: recordId, templateId: template.id, programId }, select: { id: true, createdById: true } });
   if (!record) throw new EntityError('Запись не найдена');
+  assertCanTouchRecord(access, record);
 
   const groups: ReverseRelationGroup[] = [];
   const cache = new Map<string, EntityTemplateDef>();
   for (const ref of await referencingFields(programId, template.id)) {
-    const where = referencingWhere(programId, ref.template.id, ref.field, recordId);
+    // Ссылающиеся записи показываются только тем, кто вправе читать их сущность, и только доступные ему
+    const sourceAccess = await accessOf(viewer, ref.template.id);
+    if (sourceAccess && !sourceAccess.read) continue;
+    const where = {
+      ...referencingWhere(programId, ref.template.id, ref.field, recordId),
+      ...(sourceAccess?.own ? { createdById: sourceAccess.userId } : {}),
+    };
     const total = await prisma.entityRecord.count({ where });
     if (total === 0) continue;
     const rows = await prisma.entityRecord.findMany({ where, orderBy: { createdAt: 'desc' }, take: REVERSE_LIMIT });
@@ -857,24 +929,29 @@ export async function listReverse(programId: string, templateKey: string, record
       source = (await getTemplate(programId, ref.template.key)) as EntityTemplateDef;
       cache.set(ref.template.id, source);
     }
-    const fields = source.fields;
-    const displayField = source.displayField;
+    const seen = viewTemplate(source, sourceAccess);
+    const fields = seen.fields;
+    const displayField = seen.displayField;
     groups.push({
       template: { key: ref.template.key, name: ref.template.name, namePlural: ref.template.namePlural },
       field: { key: ref.field.key, label: ref.field.label },
       total,
       records: rows.map((r) => ({
         id: r.id,
-        label: recordLabel({ id: r.id, data: r.data as Record<string, unknown>, createdAt: '', updatedAt: '' }, fields, displayField),
+        label: recordLabel({ ...sanitizeRecord(toRecordDef(r), sourceAccess), createdAt: '', updatedAt: '' }, fields, displayField),
       })),
     });
   }
   return groups;
 }
 
-export async function deleteRecord(programId: string, templateKey: string, id: string): Promise<void> {
+export async function deleteRecord(programId: string, templateKey: string, id: string, viewer?: ViewerUser): Promise<void> {
   const template = await prisma.entityTemplate.findUnique({ where: { programId_key: { programId, key: templateKey } } });
   if (!template) throw new EntityError('Сущность не найдена');
+  const access = await accessOf(viewer, template.id);
+  assertAccess(access, 'delete');
+  const target = await prisma.entityRecord.findFirst({ where: { id, templateId: template.id, programId }, select: { createdById: true } });
+  if (target) assertCanTouchRecord(access, target);
 
   // Ссылки на удаляемую запись: либо запрещают удаление, либо убираются из записей
   const cleanups: { id: string; data: Record<string, unknown> }[] = [];

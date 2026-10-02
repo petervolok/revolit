@@ -4,13 +4,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requirePermission, isDenied } from '../../auth/guard';
 import { writeAudit } from '../../auth/audit';
 import { clientIp, userAgent } from '../../utils/request';
-import { createTemplate, listTemplates, EntityError } from '../../entities/service';
+import { createTemplate, listTemplatesFor, EntityError } from '../../entities/service';
+import { requireSignedIn, isUserDenied } from '../../entities/guard';
 
+/** Сущности программы: у кого entities.manage — все целиком, у остальных — только доступные для чтения */
 export async function GET() {
-  const guard = await requirePermission('entities.manage');
-  if (isDenied(guard)) return guard.response;
+  const guard = await requireSignedIn();
+  if (isUserDenied(guard)) return guard.response;
 
-  const templates = await listTemplates(guard.user.programId);
+  const templates = await listTemplatesFor(guard.user.programId, guard.user);
   return NextResponse.json(templates);
 }
 

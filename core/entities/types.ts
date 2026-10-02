@@ -126,6 +126,8 @@ export interface EntityTemplateDef {
   fields: EntityFieldDef[];
   /** Есть хотя бы одна запись — часть правок полей ограничена (тип, удаление выбранных значений) */
   hasRecords: boolean;
+  /** Что сотрудник вправе делать с записями; нет значения — без ограничений (право entities.manage) */
+  access?: { create: boolean; update: boolean; delete: boolean; own: boolean };
 }
 
 /**
@@ -155,6 +157,8 @@ export interface EntityPresetDef {
 export interface EntityRecordDef {
   id: string;
   data: Record<string, unknown>;
+  /** Кто создал запись (правило «только свои записи»); у записей, созданных до его появления, пусто */
+  createdById?: string | null;
   createdAt: string;
   updatedAt: string;
 }

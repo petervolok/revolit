@@ -26,6 +26,7 @@ export { sendMail } from './ports/mail';
 export {
   EntityError,
   listTemplates,
+  listTemplatesFor,
   getTemplate,
   createTemplate,
   renameTemplate,

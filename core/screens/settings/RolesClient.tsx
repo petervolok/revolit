@@ -9,6 +9,7 @@ import Input from '../../ui/Input';
 import RowMenu from '../../ui/RowMenu';
 import SlideOver from '../../ui/SlideOver';
 import type { PermissionGroup } from '../../auth/permissions';
+import RoleEntityAccess from './RoleEntityAccess';
 
 interface RoleRow {
   id: string;
@@ -314,6 +315,13 @@ export default function RolesClient({ permissionGroups }: { permissionGroups: Pe
               </div>
             )}
           </div>
+
+          {editing && !editingSystem && (
+            <div>
+              <p className="mb-2 text-[13px] font-medium text-ink">Доступ к сущностям</p>
+              <RoleEntityAccess roleId={editing.id} />
+            </div>
+          )}
         </div>
       </SlideOver>
     </div>

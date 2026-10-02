@@ -5,7 +5,7 @@ import {
   hasPermission,
   listDisabledModuleKeys,
   listProcessTemplates,
-  listTemplates,
+  listTemplatesFor,
 } from '@revolit/core/server';
 import AppChrome from '@/shell/AppChrome';
 import '@/modules';
@@ -19,9 +19,7 @@ export default async function ShellLayout({ children }: { children: React.ReactN
   // Пункты меню сущностей и процессов собираются здесь: они живут в базе,
   // а не в коде модуля, поэтому реестр вкладов о них не знает —
   // см. core/entities/nav.ts и core/processes/nav.ts.
-  const entityLinks = hasPermission(user, 'entities.manage')
-    ? (await listTemplates(user.programId)).map((t) => ({ key: t.key, namePlural: t.namePlural }))
-    : [];
+  const entityLinks = (await listTemplatesFor(user.programId, user)).map((t) => ({ key: t.key, namePlural: t.namePlural }));
 
   const processLinks = hasPermission(user, 'processes.manage')
     ? (await listProcessTemplates(user.programId)).map((p) => ({ key: p.key, name: p.name }))

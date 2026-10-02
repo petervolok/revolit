@@ -204,6 +204,10 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
     return <EmptyState icon={Trash2} title="Раздел не найден" description="Возможно, сущность была удалена." />;
   }
 
+  const canCreate = !template.access || template.access.create;
+  const canUpdate = !template.access || template.access.update;
+  const canDelete = !template.access || template.access.delete;
+
   const openCreate = () => {
     setEditing(null);
     const defaults: Record<string, FormValue> = {};
@@ -352,9 +356,11 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
               </Button>
             </>
           )}
-          <Button variant="primary" onClick={openCreate}>
-            <Plus className="h-4 w-4" /> Добавить
-          </Button>
+          {canCreate && (
+            <Button variant="primary" onClick={openCreate}>
+              <Plus className="h-4 w-4" /> Добавить
+            </Button>
+          )}
         </div>
       </div>
 
@@ -467,11 +473,13 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
         <EmptyState
           icon={Plus}
           title="Записей пока нет"
-          description="Добавьте первую запись — форма собрана из полей, заданных в настройках сущности."
+          description={canCreate ? 'Добавьте первую запись — форма собрана из полей, заданных в настройках сущности.' : 'Записей, доступных вам, пока нет.'}
           action={
-            <Button variant="primary" onClick={openCreate}>
-              <Plus className="h-4 w-4" /> Добавить
-            </Button>
+            canCreate ? (
+              <Button variant="primary" onClick={openCreate}>
+                <Plus className="h-4 w-4" /> Добавить
+              </Button>
+            ) : undefined
           }
         />
       )}
@@ -511,8 +519,8 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
                   <td className="px-2 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
                     <RowMenu
                       items={[
-                        { label: 'Изменить', icon: <Pencil className="h-4 w-4" />, onClick: () => openEdit(r) },
-                        { label: 'Удалить', icon: <Trash2 className="h-4 w-4" />, danger: true, onClick: () => remove(r) },
+                        { label: canUpdate ? 'Изменить' : 'Открыть', icon: <Pencil className="h-4 w-4" />, onClick: () => openEdit(r) },
+                        { label: 'Удалить', icon: <Trash2 className="h-4 w-4" />, danger: true, hidden: !canDelete, onClick: () => remove(r) },
                       ]}
                     />
                   </td>
@@ -554,7 +562,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
             <Button variant="secondary" onClick={() => setFormOpen(false)}>
               Отмена
             </Button>
-            <Button variant="primary" loading={saving} onClick={save}>
+            <Button variant="primary" loading={saving} onClick={save} disabled={Boolean(editing) && !canUpdate}>
               Сохранить
             </Button>
           </>
@@ -566,7 +574,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
             const setValue = (v: FormValue) => setForm((prev) => ({ ...prev, [f.key]: v }));
             const label = f.label + (f.required ? ' *' : '');
             // Поле «только чтение» нельзя менять в уже существующей записи
-            const locked = f.readonly && Boolean(editing);
+            const locked = (f.readonly && Boolean(editing)) || (Boolean(editing) && !canUpdate);
 
             if (f.type === 'boolean') {
               return (

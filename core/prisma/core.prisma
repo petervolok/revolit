@@ -28,7 +28,8 @@ model Role {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  users UserRole[]
+  users        UserRole[]
+  entityAccess EntityAccess[]
 
   @@unique([programId, key])
 }
@@ -157,6 +158,7 @@ model EntityTemplate {
 
   fields  EntityField[]
   records EntityRecord[]
+  access  EntityAccess[]
 
   @@unique([programId, key])
 }
@@ -215,6 +217,9 @@ model EntityRecord {
   templateId String
   template   EntityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   data       Json
+  // Кто создал запись — нужно правилу «видеть только свои записи» (строка 5 таблицы покрытия).
+  // Без связи с учёткой: запись переживает удаление сотрудника.
+  createdById String?
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 
@@ -226,6 +231,28 @@ model EntityRecord {
   attachments     Attachment[]
 
   @@index([templateId, createdAt])
+  @@index([templateId, createdById])
+}
+
+// Права роли на сущность (строка 5): что можно делать с записями, чьи записи видны,
+// какие поля скрыты и какие только для чтения. Нет строки — у роли нет доступа к сущности.
+// Право entities.manage (структура и все записи) и полный доступ эту таблицу обходят.
+model EntityAccess {
+  roleId         String
+  role           Role           @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  templateId     String
+  template       EntityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  canRead        Boolean        @default(false)
+  canCreate      Boolean        @default(false)
+  canUpdate      Boolean        @default(false)
+  canDelete      Boolean        @default(false)
+  // all — все записи, own — только созданные самим сотрудником
+  rowScope       String         @default("all")
+  hiddenFields   String[]       @default([])
+  readonlyFields String[]       @default([])
+  updatedAt      DateTime       @updatedAt
+
+  @@id([roleId, templateId])
 }
 
 // ─── Настройки программы ───
