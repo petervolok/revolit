@@ -14,6 +14,7 @@ const parts = [
   { title: 'подключение', file: path.join(appDir, 'prisma', 'base.prisma') },
   { title: 'ядро', file: path.join(repoRoot, 'core', 'prisma', 'core.prisma') },
   { title: 'чувствительность (только сервер №2)', file: path.join(appDir, 'prisma', 'sensitivity.prisma') },
+  { title: 'журнал операций (только сервер №2)', file: path.join(appDir, 'prisma', 'operations.prisma') },
 ];
 
 const chunks = ['// ФАЙЛ СОБИРАЕТСЯ АВТОМАТИЧЕСКИ — правьте части, а не этот файл.', ''];

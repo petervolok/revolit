@@ -1,54 +1,84 @@
 /**
  * Агент №2 (docs/11b, раздел 2.2) — существует ТОЛЬКО в этой сборке, для сервера №2.
- * Отличие от обычного агента (apps/agent) ровно одно: после исполнения операции на своей
- * БД №2 решает, дублировать ли её в БД №1 напрямую (не через шину — см. dualWrite.ts,
- * решение владельца в docs/08-decisions.md Р-41). Само подключение к шине, приоритет
- * потребителя, протокол, ack/nack и остановка — как у обычного агента (переиспользуются
- * его же модуль подключения через copy-paste минимальной обвязки ниже, а не общий код,
- * чтобы конкретно в этом файле было видно и проверяемо: логика чувствительности не течёт
- * обратно в apps/agent, которым собирается сервер №1).
+ * Работает по протоколу трёх потоков шины (docs/08-decisions.md Р-45):
+ *   1. забирает команду из MAIN и исполняет её на своей БД №2 в транзакции, вместе с записью
+ *      в журнал операций (повторная доставка не исполняет операцию снова);
+ *   2. публикует результат (состояние строк, без чувствительных) в EVENTS по ключу `changes`;
+ *   3. ждёт подтверждение в COMPLETIONS — изменения применены в БД №1;
+ *   4. только после этого отвечает вызвавшему приложению и подтверждает (ack) команду в MAIN.
+ * Инвариант: команда исчезла из MAIN → её результат уже в БД №1. Упал до подтверждения — команда
+ * осталась в MAIN и придёт снова; журнал не даёт исполнить её второй раз.
+ *
+ * Подключение к шине, приоритет, остановка — минимальная обвязка, скопированная намеренно, а не
+ * общий код с apps/agent: логика чувствительности не должна течь в сборку сервера №1.
  */
-import type { PrismaClient } from '@prisma/client';
 import * as amqp from 'amqplib';
-import type { ConsumeMessage } from 'amqplib';
-import { BUS, EVENT_KEY, fromBuffer, toBuffer } from '../../../core/bus/protocol';
-import type { BusRequest } from '../../../core/bus/protocol';
+import type { Channel, ConsumeMessage } from 'amqplib';
+import { BUS, CHANGES_KEY, EVENT_KEY, describeError, fromBuffer, toBuffer } from '../../../core/bus/protocol';
+import type { BusCompletion, BusRequest, BusResponse, DataChange } from '../../../core/bus/protocol';
+import { newId } from '../../../core/data/ids';
+import { deriveDomainEvents, WRITE_OPERATIONS } from '../../../core/data/domainEvents';
+import type { DerivedEvent } from '../../../core/data/domainEvents';
 import { createLocalDataPort } from '../../../core/data/localPort';
-import type { DataOperation } from '../../../core/data/port';
-import { handleRequest } from '../../agent/src/handler';
-import { createPrimaryClient, db2 } from './client';
-import { captureBeforeState, shouldMirrorToPrimary } from './dualWrite';
-
-/**
- * `createLocalDataPort` типизирован по клиенту apps/crm (`@prisma/client`) — единственному,
- * который знает основной код (core/agent). Клиент agent2 (`./client`) собран из другой,
- * но структурно совместимой схемы (свой генератор, ТЗ 4.1) — приводим тип только здесь,
- * на границе, где это доказуемо безопасно (обе схемы включают одни и те же доменные модели).
- */
-const asPortClient = (client: unknown): PrismaClient => client as PrismaClient;
+import { decode, encode } from '../../../core/data/serialize';
+import type { PrismaClient } from '@prisma/client';
+import { handleRequest, isInfrastructureError } from '../../agent/src/handler';
+import type { AgentPrismaClient } from './client';
+import { db2 } from './client';
+import { runWrites } from './changes';
 
 const name = process.env.AGENT_NAME ?? 'agent-2';
 const log = (message: string) => console.log(`[${name}] ${message}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const localPort = createLocalDataPort(asPortClient(db2));
-const primaryClient = createPrimaryClient();
-const primaryPort = primaryClient ? createLocalDataPort(asPortClient(primaryClient)) : null;
+/** Порт для чтения: клиент agent2 собран из другой, но структурно совместимой схемы — приводим тип на границе */
+const readPort = createLocalDataPort(db2 as unknown as PrismaClient);
 
-if (!primaryPort) {
-  log('DATABASE_URL_PRIMARY не задан — дублирование в БД №1 выключено, работаю только со своей БД');
+interface Outcome {
+  response: BusResponse;
+  changes: DataChange[];
+  events: DerivedEvent[];
 }
 
-/** Дублирует уже подтверждённую на БД №2 операцию в БД №1. Сбой сюда не должен долетать до ack. */
-async function mirror(op: DataOperation): Promise<void> {
-  if (!primaryPort) return;
-  try {
-    await primaryPort.execute(op);
-  } catch (error) {
-    // Повтор create по явному id (этап 1) сделает это безопасным при следующей попытке —
-    // здесь только логируем, не роняем обработку основного сообщения
-    log(`дублирование в БД №1 не удалось (${op.model}.${op.operation}): ${(error as Error).message}`);
-  }
+/** Журнал операций: Json-значения, а не Prisma-клиент сервера №1, поэтому доступ через узкий интерфейс */
+interface LogDelegate {
+  findUnique(args: unknown): Promise<{ response: unknown; changes: unknown; events: unknown } | null>;
+  create(args: unknown): Promise<unknown>;
+  deleteMany(args: unknown): Promise<unknown>;
+}
+const logOf = (client: unknown) => (client as { operationLog: LogDelegate }).operationLog;
+
+async function loadOutcome(operationId: string): Promise<Outcome | null> {
+  const row = await logOf(db2).findUnique({ where: { id: operationId } });
+  if (!row) return null;
+  return {
+    response: decode(row.response) as BusResponse,
+    changes: decode(row.changes) as DataChange[],
+    events: decode(row.events) as DerivedEvent[],
+  };
+}
+
+/** Исполняет запись и сохраняет журнал одной транзакцией */
+async function executeWrite(request: BusRequest, operationId: string): Promise<Outcome> {
+  const ops = request.kind === 'batch' ? request.ops : [request.op];
+
+  return db2.$transaction(
+    async (tx) => {
+      const client = tx as unknown as AgentPrismaClient;
+      const { results, changes } = await runWrites(client, ops);
+
+      const events = ops.flatMap((op, i) =>
+        WRITE_OPERATIONS.has(op.operation) ? deriveDomainEvents(op.model, op.operation, op.args, results[i]) : []
+      );
+      const response: BusResponse = { ok: true, result: request.kind === 'batch' ? results : results[0] };
+
+      await logOf(client).create({
+        data: { id: operationId, response: encode(response), changes: encode(changes), events: encode(events) },
+      });
+      return { response, changes, events };
+    },
+    { timeout: 20_000, maxWait: 5_000 }
+  );
 }
 
 async function main(): Promise<void> {
@@ -57,6 +87,7 @@ async function main(): Promise<void> {
 
   const priority = Number(process.env.AGENT_PRIORITY ?? 10);
   const prefetch = Number(process.env.AGENT_PREFETCH ?? 4);
+  const completionTimeout = Number(process.env.AGENT_COMPLETION_TIMEOUT_MS) || 20_000;
 
   const connection = await amqp.connect(url, { heartbeat: Number(process.env.BUS_HEARTBEAT) || 5 });
   connection.on('close', () => {
@@ -65,10 +96,45 @@ async function main(): Promise<void> {
   });
   connection.on('error', (error: Error) => log(`ошибка соединения: ${error.message}`));
 
-  const channel = await connection.createChannel();
+  const channel: Channel = await connection.createChannel();
   await channel.assertQueue(BUS.operationsQueue, { durable: true });
   await channel.assertExchange(BUS.eventsExchange, 'topic', { durable: true });
+  await channel.assertExchange(BUS.completionsExchange, 'fanout', { durable: true });
   await channel.prefetch(prefetch);
+
+  // COMPLETIONS: своя очередь на время жизни процесса; ожидающие операции ищут своё подтверждение по operationId
+  const waiters = new Map<string, (completion: BusCompletion) => void>();
+  const completions = await channel.assertQueue('', { exclusive: true, autoDelete: true });
+  await channel.bindQueue(completions.queue, BUS.completionsExchange, '');
+  await channel.consume(
+    completions.queue,
+    (msg: ConsumeMessage | null) => {
+      if (!msg) return;
+      const completion = fromBuffer<BusCompletion>(msg.content);
+      waiters.get(completion.operationId)?.(completion);
+    },
+    { noAck: true }
+  );
+
+  /** Публикует изменения в EVENTS и ждёт подтверждение. Ожидание заводится ДО публикации — иначе подтверждение могло бы прийти раньше */
+  const publishAndWait = (operationId: string, changes: DataChange[]): Promise<BusCompletion | null> => {
+    const wait = new Promise<BusCompletion | null>((resolve) => {
+      const timer = setTimeout(() => {
+        waiters.delete(operationId);
+        resolve(null);
+      }, completionTimeout);
+      waiters.set(operationId, (completion) => {
+        clearTimeout(timer);
+        waiters.delete(operationId);
+        resolve(completion);
+      });
+    });
+    channel.publish(BUS.eventsExchange, CHANGES_KEY, toBuffer({ operationId, changes }), {
+      persistent: true,
+      contentType: 'application/json',
+    });
+    return wait;
+  };
 
   await channel.consume(
     BUS.operationsQueue,
@@ -86,34 +152,60 @@ async function main(): Promise<void> {
         log(request.kind === 'batch' ? `op batch(${request.ops.length})` : `op ${request.op.model}.${request.op.operation}`);
       }
 
-      // «Снимок» до исполнения — нужен для delete/deleteMany, пока запись ещё жива
-      const before = request.kind === 'op' ? await captureBeforeState(db2, request.op) : null;
+      const reply = (response: BusResponse) => {
+        if (msg.properties.replyTo) {
+          channel.sendToQueue(msg.properties.replyTo, toBuffer(response), { correlationId: msg.properties.correlationId });
+        }
+      };
 
-      const handled = await handleRequest(localPort, request);
+      const ops = request.kind === 'batch' ? request.ops : [request.op];
+      const isWrite = request.kind === 'batch' || ops.some((op) => WRITE_OPERATIONS.has(op.operation));
 
-      if (handled.retry) {
-        log('сбой инфраструктуры, возвращаю сообщение в очередь');
-        await sleep(2000);
-        channel.nack(msg, false, true);
+      // Чтение: журнал и подтверждения не нужны, результат никуда не передаётся
+      if (!isWrite) {
+        const handled = await handleRequest(readPort, request);
+        if (handled.retry) {
+          log('сбой инфраструктуры, возвращаю сообщение в очередь');
+          await sleep(2000);
+          channel.nack(msg, false, true);
+          return;
+        }
+        reply(handled.response);
+        channel.ack(msg);
         return;
       }
 
-      if (handled.response.ok) {
-        if (request.kind === 'op') {
-          const mirrorIt = await shouldMirrorToPrimary(db2, request.op, handled.response.result, before);
-          if (mirrorIt) await mirror(request.op);
-        } else {
-          // Пакетные операции (перестановка полей/этапов) — структурные данные, зеркалятся всегда
-          for (const op of request.ops) await mirror(op);
+      // Запись. operationId — correlationId команды; он же ключ журнала и ключ подтверждения
+      const operationId = (msg.properties.correlationId as string | undefined) ?? newId();
+
+      let outcome: Outcome | null = null;
+      try {
+        outcome = await loadOutcome(operationId); // повторная доставка: операция уже выполнена
+        if (!outcome) outcome = await executeWrite(request, operationId);
+      } catch (error) {
+        if (isInfrastructureError(error)) {
+          log('сбой инфраструктуры, возвращаю сообщение в очередь');
+          await sleep(2000);
+          channel.nack(msg, false, true);
+          return;
+        }
+        // Ошибка самой операции (нарушение ограничения и т.п.): транзакция откатилась, ничего не записано
+        outcome = { response: { ok: false, error: describeError(error) }, changes: [], events: [] };
+      }
+
+      if (outcome.changes.length > 0) {
+        const completion = await publishAndWait(operationId, outcome.changes);
+        if (!completion?.ok) {
+          // Не подтверждено: команду не снимаем — вернётся в MAIN и пройдёт тот же путь (журнал не даст исполнить дважды)
+          log(`применение не подтверждено (${completion ? completion.error : 'нет ответа'}), возвращаю команду в очередь`);
+          await sleep(5000);
+          channel.nack(msg, false, true);
+          return;
         }
       }
 
-      if (msg.properties.replyTo) {
-        channel.sendToQueue(msg.properties.replyTo, toBuffer(handled.response), {
-          correlationId: msg.properties.correlationId,
-        });
-      }
-      for (const e of handled.events) {
+      reply(outcome.response);
+      for (const e of outcome.events) {
         channel.publish(BUS.eventsExchange, EVENT_KEY, toBuffer({ event: e.event, payload: e.payload }));
       }
       channel.ack(msg);
@@ -121,10 +213,19 @@ async function main(): Promise<void> {
     { priority, noAck: false }
   );
 
-  log(`готов: очередь ${BUS.operationsQueue}, приоритет ${priority}, prefetch ${prefetch}, дублирование в БД №1 ${primaryPort ? 'включено' : 'выключено'}`);
+  log(`готов: очередь ${BUS.operationsQueue}, приоритет ${priority}, prefetch ${prefetch}, ожидание подтверждения ${completionTimeout} мс`);
+
+  // Журнал нужен, пока команда может прийти повторно; неделя с большим запасом
+  const keepDays = Number(process.env.AGENT_LOG_KEEP_DAYS) || 7;
+  const cleanup = setInterval(() => {
+    logOf(db2)
+      .deleteMany({ where: { createdAt: { lt: new Date(Date.now() - keepDays * 86_400_000) } } })
+      .catch((error: Error) => log(`очистка журнала не удалась: ${error.message}`));
+  }, 3_600_000);
 
   const shutdown = async () => {
     log('остановка');
+    clearInterval(cleanup);
     connection.removeAllListeners('close');
     await channel.close().catch(() => undefined);
     await connection.close().catch(() => undefined);

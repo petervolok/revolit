@@ -9,7 +9,8 @@ function delegate(client: PrismaClient, model: string): Record<string, (args?: u
   return d as Record<string, (args?: unknown) => unknown>;
 }
 
-function call(client: PrismaClient, op: DataOperation): Promise<unknown> {
+/** Выполняет операцию на клиенте или клиенте транзакции — нужна и тем, кто выполняет пакет сам, внутри своей транзакции */
+export function callOperation(client: PrismaClient, op: DataOperation): Promise<unknown> {
   const fn = delegate(client, op.model)[op.operation];
   if (typeof fn !== 'function') throw new Error(`Операция ${op.model}.${op.operation} не поддерживается`);
   return fn.call(delegate(client, op.model), op.args) as Promise<unknown>;
@@ -22,8 +23,8 @@ function call(client: PrismaClient, op: DataOperation): Promise<unknown> {
  */
 export function createLocalDataPort(client: PrismaClient): DataPort {
   return {
-    execute: (op) => call(client, op),
+    execute: (op) => callOperation(client, op),
     // Массив отложенных запросов Prisma исполняется одной транзакцией — атомарно
-    runBatch: (ops) => client.$transaction(ops.map((op) => call(client, op) as never)) as Promise<unknown[]>,
+    runBatch: (ops) => client.$transaction(ops.map((op) => callOperation(client, op) as never)) as Promise<unknown[]>,
   };
 }

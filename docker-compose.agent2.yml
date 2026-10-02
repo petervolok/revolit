@@ -2,9 +2,8 @@
 # файл, отдельный образ (Dockerfile.agent2), запускается на другой машине:
 #   docker build -f Dockerfile.agent2 -t revolit-agent2:latest .
 #   docker compose -f docker-compose.agent2.yml --env-file .env.agent2 up -d
-# .env.agent2 (на сервере №2, не в репозитории): DB_PASSWORD, BUS_URL (публичный адрес
-# шины сервера №1), DATABASE_URL_PRIMARY (прямое подключение к БД №1 в обход шины —
-# решение владельца, docs/08-decisions.md Р-41).
+# .env.agent2 (на сервере №2, не в репозитории): DB_PASSWORD и BUS_URL (публичный адрес
+# шины сервера №1). Доступа к БД №1 у агента нет: изменения уходят по шине (Р-45).
 name: revolit-server2
 
 services:
@@ -27,7 +26,6 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db2:5432/revolit
-      DATABASE_URL_PRIMARY: ${DATABASE_URL_PRIMARY}
       BUS_URL: ${BUS_URL}
       AGENT_NAME: agent-2
       AGENT_PRIORITY: "10"
