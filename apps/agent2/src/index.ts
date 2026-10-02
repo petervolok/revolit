@@ -58,8 +58,28 @@ async function loadOutcome(operationId: string): Promise<Outcome | null> {
   };
 }
 
+/** Не больше N записей одновременно: остальные ждут здесь, а не падают на нехватке соединений с базой */
+const writeSlots = Number(process.env.AGENT_WRITE_CONCURRENCY) || 4;
+let activeWrites = 0;
+const writeQueue: (() => void)[] = [];
+
+async function withWriteSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (activeWrites >= writeSlots) await new Promise<void>((resolve) => writeQueue.push(resolve));
+  activeWrites++;
+  try {
+    return await task();
+  } finally {
+    activeWrites--;
+    writeQueue.shift()?.();
+  }
+}
+
 /** Исполняет запись и сохраняет журнал одной транзакцией */
-async function executeWrite(request: BusRequest, operationId: string): Promise<Outcome> {
+function executeWrite(request: BusRequest, operationId: string): Promise<Outcome> {
+  return withWriteSlot(() => executeWriteNow(request, operationId));
+}
+
+async function executeWriteNow(request: BusRequest, operationId: string): Promise<Outcome> {
   const ops = request.kind === 'batch' ? request.ops : [request.op];
 
   return db2.$transaction(
@@ -77,7 +97,7 @@ async function executeWrite(request: BusRequest, operationId: string): Promise<O
       });
       return { response, changes, events };
     },
-    { timeout: 20_000, maxWait: 5_000 }
+    { timeout: 20_000, maxWait: 15_000 }
   );
 }
 
@@ -86,7 +106,10 @@ async function main(): Promise<void> {
   if (!url) throw new Error('Не задан BUS_URL');
 
   const priority = Number(process.env.AGENT_PRIORITY ?? 10);
-  const prefetch = Number(process.env.AGENT_PREFETCH ?? 4);
+  // Команда держится неподтверждённой, пока сервер 1 не применил результат. Когда у приоритетного
+  // потребителя исчерпан prefetch, брокер отдаёт излишек потребителю с меньшим приоритетом — и такие
+  // записи ушли бы мимо БД №2. Поэтому предел большой, а число одновременных транзакций ограничено отдельно.
+  const prefetch = Number(process.env.AGENT_PREFETCH ?? 1000);
   const completionTimeout = Number(process.env.AGENT_COMPLETION_TIMEOUT_MS) || 20_000;
 
   const connection = await amqp.connect(url, { heartbeat: Number(process.env.BUS_HEARTBEAT) || 5 });

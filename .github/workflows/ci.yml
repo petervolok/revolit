@@ -146,6 +146,22 @@ jobs:
         env:
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
+      # Сквозная проверка двух серверов (Р-45): настоящие агенты №1 и №2, две базы, одна шина
+      - name: Вторая база для сквозной проверки
+        run: |
+          PGPASSWORD=revolit psql -h localhost -U revolit -d revolit -c 'CREATE DATABASE revolit2'
+          npx prisma migrate deploy --schema apps/crm/prisma/schema.prisma
+          npx prisma migrate deploy --schema apps/agent2/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit2
+
+      - name: Сквозная проверка двух серверов
+        run: npx tsx tools/e2e-two-servers.ts
+        env:
+          BUS_URL: amqp://revolit:revolit@localhost:5672
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+          DATABASE_URL_2: postgresql://revolit:revolit@localhost:5432/revolit2
+
       # - name: Модульные и интеграционные тесты
       #   run: npm test
       #   env:
