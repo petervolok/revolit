@@ -191,10 +191,11 @@ async function main(): Promise<void> {
   check('неизвестное правило удаления отклонено', (await failsWith(() => addField(P, KEY, { label: 'Bad5', type: 'relations', required: false, options: { targetTemplateId: company.id, onDelete: 'boom' } as never })))?.includes('правило удаления') === true);
 
   const m2 = await withFirms('Второй', [c2.id, c3.id]);
+  await renameTemplate(P, KEY, { name: 'Контакт', namePlural: 'Контакты', displayField: 'name' });
   const rev = await listReverse(P, company.key, c2.id);
   const revFirms = rev.find((g) => g.field.key === 'firms');
   check('обратная связь: компания видит контакты, которые на неё ссылаются', revFirms !== undefined && revFirms.total === 2 && revFirms.template.key === KEY);
-  check('обратная связь: подпись записи берётся по полю-заголовку сущности', revFirms !== undefined && revFirms.records.some((r) => r.label === 'Связный' || r.label.includes('example.com')));
+  check('обратная связь: подпись записи берётся по полю-заголовку сущности', revFirms !== undefined && revFirms.records.some((r) => r.label === 'Связный') && revFirms.records.some((r) => r.label === 'Второй'));
   check('у записи без ссылок обратных связей нет', (await listReverse(P, company.key, (await createRecord(P, company.key, { title: 'Одинокая' })).id)).length === 0);
 
   // правка списка связей
