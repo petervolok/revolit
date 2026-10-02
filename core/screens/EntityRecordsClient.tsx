@@ -11,12 +11,33 @@ import RowMenu from '../ui/RowMenu';
 import Select from '../ui/Select';
 import SlideOver from '../ui/SlideOver';
 import AttachmentsSection from '../attachments/AttachmentsSection';
-import { recordLabel } from '../entities/types';
+import { displayValue, recordLabel } from '../entities/types';
 import type { EntityFieldDef, EntityRecordDef, EntityTemplateDef } from '../entities/types';
 import type { LinkedInstanceDef } from '../processes/types';
 import type { TaskDef } from '../tasks/types';
 
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+
+const textareaClass =
+  'w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25 disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-60';
+
+/** ISO-время → значение для поля datetime-local в местном часовом поясе */
+function toLocalInput(iso: unknown): string {
+  const d = new Date(String(iso));
+  if (Number.isNaN(d.getTime())) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+/** Начальное значение поля в форме: из записи, а для новой — значение по умолчанию */
+function formValueOf(f: EntityFieldDef, v: unknown): FormValue {
+  if (f.type === 'multiselect') return Array.isArray(v) ? v.map(String) : [];
+  if (f.type === 'boolean') return v === true;
+  if (v === undefined || v === null) return '';
+  if (f.type === 'date') return String(v).slice(0, 10);
+  if (f.type === 'datetime') return toLocalInput(v);
+  if (f.type === 'json') return JSON.stringify(v, null, 2);
+  return String(v);
+}
 
 interface ProgramUser {
   id: string;
@@ -25,7 +46,7 @@ interface ProgramUser {
 }
 
 /** Значение поля в форме: текстовые поля — строка, список с несколькими значениями — массив */
-type FormValue = string | string[];
+type FormValue = string | string[] | boolean;
 
 export default function EntityRecordsClient({ templateKey }: { templateKey: string }) {
   const [template, setTemplate] = useState<EntityTemplateDef | null>(null);
@@ -90,7 +111,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
         const recBody = recRes.ok ? await recRes.json() : { records: [] };
         options[targetId] = (recBody.records as EntityRecordDef[]).map((r) => ({
           id: r.id,
-          label: recordLabel(r, target.fields),
+          label: recordLabel(r, target.fields, target.displayField),
         }));
       }
       setRelationOptions(options);
@@ -107,15 +128,17 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
       .then(setProgramUsers);
   }, [template]);
 
-  const columns = useMemo(() => template?.fields ?? [], [template]);
+  const allFields = useMemo(() => template?.fields ?? [], [template]);
+  // Колонки списка: поля, помеченные «не показывать в списке», скрыты (в форме они остаются)
+  const columns = useMemo(() => allFields.filter((f) => !f.hidden), [allFields]);
 
   const visibleRecords = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return records;
     return records.filter((r) =>
-      columns.some((f) => String(r.data[f.key] ?? '').toLowerCase().includes(q))
+      allFields.some((f) => String(r.data[f.key] ?? '').toLowerCase().includes(q))
     );
-  }, [records, columns, query]);
+  }, [records, allFields, query]);
 
   if (loading) return null;
   if (!template) {
@@ -124,7 +147,11 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
 
   const openCreate = () => {
     setEditing(null);
-    setForm({});
+    const defaults: Record<string, FormValue> = {};
+    for (const f of template.fields) {
+      if (f.hasDefault) defaults[f.key] = formValueOf(f, f.defaultValue);
+    }
+    setForm(defaults);
     setFormError('');
     setFormOpen(true);
     setLinkedInstances([]);
@@ -134,16 +161,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
   const openEdit = (r: EntityRecordDef) => {
     setEditing(r);
     const values: Record<string, FormValue> = {};
-    for (const f of template.fields) {
-      const v = r.data[f.key];
-      if (f.type === 'multiselect') {
-        values[f.key] = Array.isArray(v) ? v.map(String) : [];
-      } else if (f.type === 'date' && typeof v === 'string') {
-        values[f.key] = v.slice(0, 10);
-      } else {
-        values[f.key] = v !== undefined ? String(v) : '';
-      }
-    }
+    for (const f of template.fields) values[f.key] = formValueOf(f, r.data[f.key]);
     setForm(values);
     setFormError('');
     setFormOpen(true);
@@ -161,11 +179,21 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
     setSaving(true);
     setFormError('');
 
+    // Дата и время вводятся в местном поясе пользователя — на сервер уходят в абсолютном виде (ISO)
+    const payload: Record<string, FormValue> = { ...form };
+    for (const f of template.fields) {
+      const v = payload[f.key];
+      if (f.type === 'datetime' && typeof v === 'string' && v) {
+        const d = new Date(v);
+        if (!Number.isNaN(d.getTime())) payload[f.key] = d.toISOString();
+      }
+    }
+
     const url = editing ? `/api/entities/${templateKey}/records/${editing.id}` : `/api/entities/${templateKey}/records`;
     const res = await fetch(url, {
       method: editing ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify(payload),
     });
     setSaving(false);
 
@@ -197,6 +225,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
       return '—';
     }
     if (field.type === 'date') return dateFormat.format(new Date(String(value)));
+    if (field.type === 'boolean' || field.type === 'datetime' || field.type === 'json') return displayValue(field, value);
     if (field.type === 'relation') {
       const targetId = (field.options as { targetTemplateId: string } | null)?.targetTemplateId;
       const found = targetId ? relationOptions[targetId]?.find((o) => o.id === value) : null;
@@ -212,10 +241,33 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
     return String(value);
   };
 
+  /** Ссылки, почта и телефон в списке — кликабельны; клик по ним не открывает форму записи */
+  const renderCell = (field: EntityFieldDef, record: EntityRecordDef): React.ReactNode => {
+    const text = formatCell(field, record);
+    const raw = record.data[field.key];
+    if (text === '—' || typeof raw !== 'string') return text;
+    const href = field.type === 'url' ? raw : field.type === 'email' ? `mailto:${raw}` : field.type === 'phone' ? `tel:${raw.replace(/[^+\d]/g, '')}` : null;
+    if (!href) return text;
+    return (
+      <a
+        href={href}
+        target={field.type === 'url' ? '_blank' : undefined}
+        rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-brand hover:underline"
+      >
+        {text}
+      </a>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-5 flex items-center justify-between gap-4">
-        <h1 className="text-lg font-semibold text-ink">{template.namePlural}</h1>
+        <div>
+          <h1 className="text-lg font-semibold text-ink">{template.namePlural}</h1>
+          {template.description && <p className="mt-1 text-[13px] text-ink-muted">{template.description}</p>}
+        </div>
         <div className="flex items-center gap-3">
           {records.length > 0 && (
             <div className="w-56">
@@ -283,7 +335,7 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
                 >
                   {columns.map((f) => (
                     <td key={f.id} className="px-4 py-2.5 text-ink">
-                      {formatCell(f, r)}
+                      {renderCell(f, r)}
                     </td>
                   ))}
                   <td className="px-2 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
@@ -321,6 +373,37 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
             const value = form[f.key];
             const setValue = (v: FormValue) => setForm((prev) => ({ ...prev, [f.key]: v }));
             const label = f.label + (f.required ? ' *' : '');
+            // Поле «только чтение» нельзя менять в уже существующей записи
+            const locked = f.readonly && Boolean(editing);
+
+            if (f.type === 'boolean') {
+              return (
+                <Checkbox
+                  key={f.id}
+                  label={label}
+                  hint={f.description ?? undefined}
+                  disabled={locked}
+                  checked={value === true}
+                  onChange={(v) => setValue(v)}
+                />
+              );
+            }
+
+            if (f.type === 'longtext' || f.type === 'json') {
+              return (
+                <div key={f.id}>
+                  <label className="mb-1.5 block text-[13px] font-medium text-ink">{label}</label>
+                  <textarea
+                    className={textareaClass + (f.type === 'json' ? ' font-mono text-xs' : '')}
+                    rows={f.type === 'json' ? 6 : 4}
+                    disabled={locked}
+                    value={(value as string) ?? ''}
+                    onChange={(e) => setValue(e.target.value)}
+                  />
+                  {f.description && <p className="mt-1.5 text-xs text-ink-muted">{f.description}</p>}
+                </div>
+              );
+            }
 
             if (f.type === 'select') {
               const choices = (f.options as { choices: string[] } | null)?.choices ?? [];
@@ -328,6 +411,8 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
                 <Select
                   key={f.id}
                   label={label}
+                  hint={f.description ?? undefined}
+                  disabled={locked}
                   value={(value as string) ?? ''}
                   onChange={(e) => setValue(e.target.value)}
                 >
@@ -352,9 +437,10 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
                   <span className="mb-1.5 block text-[13px] font-medium text-ink">{label}</span>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-lg border border-line px-2 py-2">
                     {choices.map((c) => (
-                      <Checkbox key={c} label={c} checked={selected.includes(c)} onChange={(v) => toggle(c, v)} />
+                      <Checkbox key={c} label={c} disabled={locked} checked={selected.includes(c)} onChange={(v) => toggle(c, v)} />
                     ))}
                   </div>
+                  {f.description && <p className="mt-1.5 text-xs text-ink-muted">{f.description}</p>}
                 </div>
               );
             }
@@ -366,6 +452,8 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
                 <Select
                   key={f.id}
                   label={label}
+                  hint={f.description ?? undefined}
+                  disabled={locked}
                   value={(value as string) ?? ''}
                   onChange={(e) => setValue(e.target.value)}
                 >
@@ -384,6 +472,8 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
                 <Select
                   key={f.id}
                   label={label}
+                  hint={f.description ?? undefined}
+                  disabled={locked}
                   value={(value as string) ?? ''}
                   onChange={(e) => setValue(e.target.value)}
                 >
@@ -397,11 +487,26 @@ export default function EntityRecordsClient({ templateKey }: { templateKey: stri
               );
             }
 
+            const inputType =
+              f.type === 'number' ? 'number'
+              : f.type === 'date' ? 'date'
+              : f.type === 'datetime' ? 'datetime-local'
+              : f.type === 'email' ? 'email'
+              : f.type === 'url' ? 'url'
+              : f.type === 'phone' ? 'tel'
+              : 'text';
+            const v = f.validation;
             return (
               <Input
                 key={f.id}
                 label={label}
-                type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
+                hint={f.description ?? undefined}
+                type={inputType}
+                disabled={locked}
+                {...(f.type === 'number'
+                  ? { min: v.min as number | undefined, max: v.max as number | undefined, step: v.integer ? 1 : 'any' }
+                  : {})}
+                {...(v.maxLength !== undefined ? { maxLength: v.maxLength } : {})}
                 value={(value as string) ?? ''}
                 onChange={(e) => setValue(e.target.value)}
               />

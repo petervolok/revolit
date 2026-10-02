@@ -153,6 +153,11 @@ jobs:
         env:
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
+      - name: Проверка модели данных (типы полей, правила, правка при наличии записей)
+        run: npx tsx tools/entities-smoke.ts
+        env:
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+
       # Сквозная проверка двух серверов (Р-45): настоящие агенты №1 и №2, две базы, одна шина
       - name: Вторая база для сквозной проверки
         run: |

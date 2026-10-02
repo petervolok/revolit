@@ -19,7 +19,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { key: strin
   const guard = await requirePermission('entities.manage');
   if (isDenied(guard)) return guard.response;
 
-  const { name, namePlural } = await req.json().catch(() => ({}));
+  const { name, namePlural, description, icon, displayField } = await req.json().catch(() => ({}));
   if (typeof name !== 'string' || !name.trim()) {
     return NextResponse.json({ error: 'Укажите название сущности' }, { status: 400 });
   }
@@ -28,6 +28,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { key: strin
     const template = await renameTemplate(guard.user.programId, params.key, {
       name,
       namePlural: typeof namePlural === 'string' ? namePlural : name,
+      description: typeof description === 'string' ? description : undefined,
+      icon: typeof icon === 'string' ? icon : undefined,
+      displayField: typeof displayField === 'string' ? displayField : undefined,
     });
     return NextResponse.json(template);
   } catch (error) {

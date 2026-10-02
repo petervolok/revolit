@@ -147,6 +147,11 @@ model EntityTemplate {
   // связи между шаблонами находили друг друга при создании (Р-29). Дальнейшую
   // жизнь сущности никак не ограничивает.
   sourcePresetKey String?
+  description String?
+  // Имя значка из набора lucide
+  icon       String?
+  // Ключ поля, по которому запись показывается в связях и заголовках
+  displayField String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -180,11 +185,23 @@ model EntityField {
   template   EntityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   key        String
   label      String
-  // text | number | date | select | relation
+  // text | longtext | number | boolean | date | datetime | select | multiselect | relation | user | json | email | url | phone
   type       String
   required   Boolean        @default(false)
   // Для select — { choices: string[] }; для relation — { targetTemplateId: string }
   options    Json?
+  // Подпись-подсказка под полем в форме
+  description String?
+  // Значение по умолчанию как { "v": значение }; {} — по умолчанию нет (Json? с null через шину не передать)
+  defaultValue Json      @default("{}")
+  // Значение не должно повторяться среди записей сущности
+  isUnique   Boolean        @default(false)
+  // Поле нельзя менять после создания записи
+  readonly   Boolean        @default(false)
+  // Не показывать колонкой в списке (в форме остаётся)
+  hidden     Boolean        @default(false)
+  // Правила проверки: { min, max, minLength, maxLength, integer, pattern, message }
+  validation Json           @default("{}")
   order      Int            @default(0)
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt

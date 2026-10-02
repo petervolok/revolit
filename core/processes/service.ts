@@ -198,7 +198,7 @@ function toInstanceDef(row: InstanceRow): ProcessInstanceDef {
       createdAt: row.entityRecord.createdAt.toISOString(),
       updatedAt: row.entityRecord.updatedAt.toISOString(),
     };
-    entityRecordLabel = recordLabel(recordDef, row.entityRecord.template.fields.map(toFieldDef));
+    entityRecordLabel = recordLabel(recordDef, row.entityRecord.template.fields.map(toFieldDef), row.entityRecord.template.displayField);
   }
 
   return {
