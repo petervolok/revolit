@@ -102,7 +102,7 @@ async function main(): Promise<void> {
   // — Копирование —
   const copy1 = await duplicateRole(P, boss, sales.id);
   const copy2 = await duplicateRole(P, boss, sales.id);
-  check('копия получает название «Копия: …», вторая копия — с номером', copy1.name === 'Копия: Старший менеджер' && copy2.name === 'Копия: Старший менеджер 2');
+  check('копия получает название «Копия: …», вторая копия — с номером', copy1.name === 'Копия: старший менеджер' && copy2.name === 'Копия: старший менеджер 2');
   check('копия повторяет права и описание, не повторяя сотрудников', copy1.permissions.join() === sales.permissions.join() && copy1.userCount === 0);
   check('роль с полным доступом копировать нельзя', (await failsWith(() => duplicateRole(P, boss, adminRole.id)))?.status === 409);
   check('копировать нельзя то, что у копирующего отсутствует', (await failsWith(() => duplicateRole(P, { permissions: ['roles.manage'] }, sales.id)))?.status === 409);
