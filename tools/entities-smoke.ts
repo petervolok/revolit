@@ -36,6 +36,7 @@ function check(name: string, ok: boolean, detail = ''): void {
   const line = `${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`;
   console.log(line);
   allLines.push(line);
+  if (!ok) console.log(`::error title=entities-smoke FAIL::${name}${detail ? ` — ${detail}` : ''}`);
   if (!ok) failures++;
 }
 
@@ -242,7 +243,7 @@ async function main(): Promise<void> {
   await basePrisma.entityTemplate.deleteMany({ where: { programId: P } });
 
   console.log(failures === 0 ? '\nВсе проверки модели данных пройдены' : `\nПРОВАЛЕНО проверок: ${failures}`);
-  console.log(`::${failures === 0 ? 'notice' : 'error'} title=entities-smoke итог::${allLines.join('%0A')}`);
+  console.log(`::notice title=entities-smoke итог::проверок ${allLines.length}, провалено ${failures}`);
   await basePrisma.$disconnect();
   process.exit(failures === 0 ? 0 : 1);
 }
