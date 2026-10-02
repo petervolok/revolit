@@ -1,0 +1,49 @@
+# Развёртывание БЕЗ шины (Р-45, этап 4): приложение пишет в базу напрямую, RabbitMQ и агента нет.
+# Выбор между этим файлом и docker-compose.prod.yml делается один раз при установке; смена режима —
+# перезапуск с другим файлом (в обоих режимах схема базы и данные одни и те же).
+#   docker compose -f docker-compose.direct.yml --env-file .env.prod up -d --build
+# Что недоступно в этом режиме: приоритетные потребители и схема двух серверов, мониторинг очереди.
+# Планировщик фоновых задач работает внутри приложения (отключить — SCHEDULER_ENABLED=0).
+name: revolit
+
+services:
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    # Наружу не пробрасывается — снаружи доступ только через https-прокси перед приложением
+    environment:
+      DATABASE_URL: postgresql://revolit:${DB_PASSWORD}@db:5432/revolit
+      NODE_ENV: production
+      STORAGE_DIR: /app/storage
+      DATA_MODE: direct
+      SCHEDULER_UTC_OFFSET_MINUTES: "${SCHEDULER_UTC_OFFSET_MINUTES:-0}"
+    depends_on:
+      - db
+    volumes:
+      - revolit_storage:/app/storage
+    networks:
+      - revolit_net
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: revolit
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: revolit
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - revolit_pgdata:/var/lib/postgresql/data
+    networks:
+      - revolit_net
+
+volumes:
+  revolit_pgdata:
+  revolit_storage:
+
+networks:
+  revolit_net:
+    name: revolit_net

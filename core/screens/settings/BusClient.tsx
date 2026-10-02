@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Activity } from 'lucide-react';
 
 interface BusHealth {
+  mode: 'bus' | 'direct';
   reachable: boolean;
   consumers: number;
   activePriority?: number;
@@ -44,6 +45,11 @@ export default function BusClient() {
 
       {!health ? (
         <div className="rounded-xl border border-line p-4 text-sm text-ink-muted">Проверяю…</div>
+      ) : health.mode === 'direct' ? (
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-muted px-3.5 py-2.5 text-[13px] text-ink">
+          <Activity className="h-4 w-4 shrink-0" />
+          Режим «напрямую»: приложение пишет в базу само, шины и очереди нет. Режим выбирается при развёртывании.
+        </div>
       ) : (
         <div className="space-y-4">
           <div

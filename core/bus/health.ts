@@ -7,7 +7,11 @@
  * ожидаем второго потребителя»).
  */
 
+import { dataMode } from '../data/port';
+
 export interface BusHealth {
+  /** Как приложение работает с базой: через шину или напрямую (выбирается при развёртывании) */
+  mode: 'bus' | 'direct';
   /** Удалось ли вообще получить ответ от брокера */
   reachable: boolean;
   /** Сколько потребителей сейчас подключено к очереди операций */
@@ -41,15 +45,18 @@ const QUEUE = 'revolit.data.operations';
 
 /** Читает состояние очереди операций через HTTP API RabbitMQ (management-плагин). */
 export async function getBusHealth(): Promise<BusHealth> {
+  // Напрямую шины нет — смотреть не на что, это штатный режим, а не отказ
+  if (dataMode() === 'direct') return { mode: 'direct', reachable: true, consumers: 0, queueDepth: 0 };
+
   const auth = managementAuth();
-  if (!auth) return { reachable: false, consumers: 0, queueDepth: 0, error: 'Не заданы учётные данные шины' };
+  if (!auth) return { mode: 'bus', reachable: false, consumers: 0, queueDepth: 0, error: 'Не заданы учётные данные шины' };
 
   try {
     const res = await fetch(`${auth.url}/api/queues/%2F/${encodeURIComponent(QUEUE)}`, {
       headers: { Authorization: auth.authHeader },
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) return { reachable: false, consumers: 0, queueDepth: 0, error: `HTTP ${res.status}` };
+    if (!res.ok) return { mode: 'bus', reachable: false, consumers: 0, queueDepth: 0, error: `HTTP ${res.status}` };
 
     const body = (await res.json()) as {
       messages?: number;
@@ -59,6 +66,7 @@ export async function getBusHealth(): Promise<BusHealth> {
     const priorities = details.map((c) => Number(c.arguments?.['x-priority'] ?? 0));
 
     return {
+      mode: 'bus',
       reachable: true,
       consumers: details.length,
       activePriority: priorities.length ? Math.max(...priorities) : undefined,
@@ -67,6 +75,6 @@ export async function getBusHealth(): Promise<BusHealth> {
   } catch {
     // Текст исключения не передаём наружу: он может содержать адрес с учётными данными
     // или другие детали инфраструктуры — наружу только факт «не отвечает».
-    return { reachable: false, consumers: 0, queueDepth: 0, error: 'Не удалось связаться с шиной' };
+    return { mode: 'bus', reachable: false, consumers: 0, queueDepth: 0, error: 'Не удалось связаться с шиной' };
   }
 }

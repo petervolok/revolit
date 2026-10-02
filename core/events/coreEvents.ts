@@ -1,4 +1,5 @@
 import { createEventBus } from './bus';
+import type { EventBus } from './bus';
 
 /**
  * События, о которых сообщает ядро. Модули подписываются на нужные.
@@ -36,4 +37,7 @@ export type CoreEventMap = {
   'scheduler.job.fired': { programId: string; jobKey: string; scheduledFor: string };
 };
 
-export const coreEvents = createEventBus<CoreEventMap>();
+// Один экземпляр на процесс: Next собирает модуль в несколько бандлов (маршруты, instrumentation),
+// у каждого была бы своя шина, и событие, отправленное в одном, не дошло бы подписчикам другого
+const globalForEvents = globalThis as unknown as { __revolitCoreEvents?: EventBus<CoreEventMap> };
+export const coreEvents = (globalForEvents.__revolitCoreEvents ??= createEventBus<CoreEventMap>());

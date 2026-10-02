@@ -72,7 +72,7 @@ echo "Разворачиваю новые исходники поверх тек
 tar -xzf "$SOURCE_TARBALL" -C /opt/revolit
 
 echo "Собираю и запускаю новую версию..."
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f "${REVOLIT_COMPOSE:-docker-compose.prod.yml}" --env-file .env.prod up -d --build
 
 echo "Жду, пока новая версия ответит (до ${HEALTH_TIMEOUT}с)..."
 elapsed=0
@@ -90,7 +90,7 @@ done
 if [ "$healthy" -ne 1 ]; then
   echo "Новая версия не отвечает — откатываюсь на $CURRENT_VERSION..."
   docker tag revolit-app:rollback revolit-app:latest
-  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+  docker compose -f "${REVOLIT_COMPOSE:-docker-compose.prod.yml}" --env-file .env.prod up -d
   echo "ОТКАЧЕНО. Обновление не применено, работает прежняя версия."
   exit 1
 fi
