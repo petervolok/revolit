@@ -10,12 +10,14 @@
  */
 import * as amqp from 'amqplib';
 import type { ConsumeMessage } from 'amqplib';
-import { BUS, fromBuffer, toBuffer } from '../../../core/bus/protocol';
-import type { BusRequest } from '../../../core/bus/protocol';
+import { BUS, CHANGES_KEY, EVENT_KEY, fromBuffer, toBuffer } from '../../../core/bus/protocol';
+import type { BusChangesMessage, BusCompletion, BusRequest } from '../../../core/bus/protocol';
 import { basePrisma, localDataPort } from '../../../core/data/prisma';
+import { applyChanges } from '../../../core/bus/applier';
 import { checkBusAndAlert } from '../../../core/bus/alerts';
+import { WRITE_OPERATIONS } from '../../../core/data/domainEvents';
 import { startScheduler } from '../../../core/scheduler/runner';
-import { handleRequest } from './handler';
+import { handleRequest, isInfrastructureError } from './handler';
 
 const name = process.env.AGENT_NAME ?? 'agent';
 const log = (message: string) => console.log(`[${name}] ${message}`);
@@ -40,8 +42,16 @@ async function main(): Promise<void> {
 
   const channel = await connection.createChannel();
   await channel.assertQueue(BUS.operationsQueue, { durable: true });
-  await channel.assertExchange(BUS.eventsExchange, 'fanout', { durable: false });
+  // Три потока шины (Р-45): MAIN — очередь команд, EVENTS — события и результаты операций,
+  // COMPLETIONS — подтверждения применения
+  await channel.assertExchange(BUS.eventsExchange, 'topic', { durable: true });
+  await channel.assertExchange(BUS.completionsExchange, 'fanout', { durable: true });
+  await channel.assertQueue(BUS.applyQueue, { durable: true });
+  await channel.bindQueue(BUS.applyQueue, BUS.eventsExchange, CHANGES_KEY);
   await channel.prefetch(prefetch);
+
+  const publishCompletion = (completion: BusCompletion) =>
+    channel.publish(BUS.completionsExchange, '', toBuffer(completion), { contentType: 'application/json' });
 
   // Пауза перед первой подпиской на очередь (при каждом (пере)старте процесса, не постоянно).
   // RabbitMQ отдаёт сообщение потребителю с наибольшим приоритетом ИЗ УЖЕ ПОДКЛЮЧЁННЫХ на этот
@@ -89,12 +99,59 @@ async function main(): Promise<void> {
         });
       }
       for (const e of handled.events) {
-        channel.publish(BUS.eventsExchange, '', toBuffer({ event: e.event, payload: e.payload }));
+        channel.publish(BUS.eventsExchange, EVENT_KEY, toBuffer({ event: e.event, payload: e.payload }));
       }
       // ack — только после записи и ответа (ТЗ 3.5)
       channel.ack(msg);
+
+      // Подтверждение применения для записей: своя база и есть конечная точка, применять больше нечего.
+      // Осмысленно и для установки с одним агентом (внешний клиент шины может ждать его по operationId).
+      const operationId = msg.properties.correlationId as string | undefined;
+      const wrote = request.kind === 'batch' || WRITE_OPERATIONS.has(request.op.operation);
+      if (operationId && wrote) publishCompletion({ operationId, ok: handled.response.ok });
     },
     { priority, noAck: false }
+  );
+
+  // Применение входящих изменений (Р-45): результаты операций, опубликованные в EVENTS по ключу
+  // `changes`, применяются к своей базе, после чего публикуется подтверждение. Отдельный канал с
+  // prefetch 1 — изменения применяются строго по порядку публикации.
+  const applyChannel = await connection.createChannel();
+  await applyChannel.prefetch(1);
+  await applyChannel.consume(
+    BUS.applyQueue,
+    async (msg: ConsumeMessage | null) => {
+      if (!msg) return;
+      let message: BusChangesMessage;
+      try {
+        message = fromBuffer<BusChangesMessage>(msg.content);
+      } catch {
+        applyChannel.reject(msg, false);
+        return;
+      }
+
+      try {
+        const result = await applyChanges(basePrisma, message.changes);
+        if (process.env.AGENT_LOG_OPS === '1') {
+          log(`применено изменений: ${result.applied}, пропущено устаревших: ${result.skipped}`);
+        }
+        publishCompletion({ operationId: message.operationId, ok: true });
+        applyChannel.ack(msg);
+      } catch (error) {
+        if (isInfrastructureError(error)) {
+          log('сбой инфраструктуры при применении изменений, возвращаю сообщение в очередь');
+          await sleep(2000);
+          applyChannel.nack(msg, false, true);
+          return;
+        }
+        // Постоянная ошибка (например, нарушение ограничения) не должна крутиться в очереди вечно:
+        // сообщаем отправителю, что не применено, и снимаем сообщение
+        log(`изменения не применены: ${(error as Error).message}`);
+        publishCompletion({ operationId: message.operationId, ok: false, error: (error as Error).message });
+        applyChannel.ack(msg);
+      }
+    },
+    { noAck: false }
   );
 
   log(`готов: очередь ${BUS.operationsQueue}, приоритет ${priority}, prefetch ${prefetch}`);
@@ -110,7 +167,7 @@ async function main(): Promise<void> {
       offsetMinutes: Number(process.env.SCHEDULER_UTC_OFFSET_MINUTES) || 0,
       log,
       emit: (fired) => {
-        channel.publish(BUS.eventsExchange, '', toBuffer({ event: 'scheduler.job.fired', payload: fired }));
+        channel.publish(BUS.eventsExchange, EVENT_KEY, toBuffer({ event: 'scheduler.job.fired', payload: fired }));
       },
     });
     log('планировщик включён');
@@ -128,6 +185,7 @@ async function main(): Promise<void> {
     clearInterval(busCheckInterval);
     stopScheduler();
     connection.removeAllListeners('close');
+    await applyChannel.close().catch(() => undefined);
     await channel.close().catch(() => undefined);
     await connection.close().catch(() => undefined);
     process.exit(0);

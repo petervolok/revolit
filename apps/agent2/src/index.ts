@@ -11,7 +11,7 @@
 import type { PrismaClient } from '@prisma/client';
 import * as amqp from 'amqplib';
 import type { ConsumeMessage } from 'amqplib';
-import { BUS, fromBuffer, toBuffer } from '../../../core/bus/protocol';
+import { BUS, EVENT_KEY, fromBuffer, toBuffer } from '../../../core/bus/protocol';
 import type { BusRequest } from '../../../core/bus/protocol';
 import { createLocalDataPort } from '../../../core/data/localPort';
 import type { DataOperation } from '../../../core/data/port';
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
 
   const channel = await connection.createChannel();
   await channel.assertQueue(BUS.operationsQueue, { durable: true });
-  await channel.assertExchange(BUS.eventsExchange, 'fanout', { durable: false });
+  await channel.assertExchange(BUS.eventsExchange, 'topic', { durable: true });
   await channel.prefetch(prefetch);
 
   await channel.consume(
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
         });
       }
       for (const e of handled.events) {
-        channel.publish(BUS.eventsExchange, '', toBuffer({ event: e.event, payload: e.payload }));
+        channel.publish(BUS.eventsExchange, EVENT_KEY, toBuffer({ event: e.event, payload: e.payload }));
       }
       channel.ack(msg);
     },

@@ -14,7 +14,7 @@ export interface Handled {
 const code = (error: unknown): string | undefined => (error as { code?: string } | undefined)?.code;
 
 /** Ошибки связи с базой — повтор имеет смысл; ошибки запроса (P2002, P2025, валидация) — нет */
-function isInfrastructureError(error: unknown): boolean {
+export function isInfrastructureError(error: unknown): boolean {
   const name = (error as { name?: string } | undefined)?.name ?? '';
   return (
     name === 'PrismaClientInitializationError' ||

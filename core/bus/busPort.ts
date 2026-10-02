@@ -3,7 +3,7 @@ import type { Channel, ConsumeMessage } from 'amqplib';
 import { newId } from '../data/ids';
 import { coreEvents } from '../events/coreEvents';
 import type { DataOperation, DataPort } from '../data/port';
-import { BUS, fromBuffer, rebuildError, toBuffer } from './protocol';
+import { BUS, EVENT_KEY, fromBuffer, rebuildError, toBuffer } from './protocol';
 import type { BusEventMessage, BusRequest, BusResponse } from './protocol';
 
 /**
@@ -89,9 +89,9 @@ function connect(): Promise<Channel> {
     );
 
     // Доменные события, которые публикует агент после подтверждённой записи (ТЗ 6)
-    await channel.assertExchange(BUS.eventsExchange, 'fanout', { durable: false });
+    await channel.assertExchange(BUS.eventsExchange, 'topic', { durable: true });
     const events = await channel.assertQueue('', { exclusive: true, autoDelete: true });
-    await channel.bindQueue(events.queue, BUS.eventsExchange, '');
+    await channel.bindQueue(events.queue, BUS.eventsExchange, EVENT_KEY);
     await channel.consume(
       events.queue,
       (msg: ConsumeMessage | null) => {

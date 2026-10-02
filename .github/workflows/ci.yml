@@ -121,6 +121,13 @@ jobs:
           BUS_URL: amqp://revolit:revolit@localhost:5672
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
+      # Протокол трёх потоков шины (Р-45): MAIN, EVENTS, COMPLETIONS
+      - name: Проверка протокола шины
+        run: npx tsx tools/protocol-smoke.ts
+        env:
+          BUS_URL: amqp://revolit:revolit@localhost:5672
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+
       # Отдельная сборка сервера №2 (docs/08-decisions.md Р-41) — своя схема, свой клиент,
       # своя таблица SensitivityRule. Проверяется отдельно от основной сборки, не входит в неё.
       - name: Схема и клиент agent2
