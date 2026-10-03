@@ -216,6 +216,7 @@ async function main(): Promise<void> {
   check('роль чужой программы недоступна', (await denied(() => getRoleEntityAccess('чужая', rReader.id))) === 'role');
 
   // — Всё, что привязано к записи, наследует права на запись; отчёты считают только доступное —
+  await saveRules(rReader.id, [{ templateId: tOrder.id, canRead: true, hiddenFields: ['secret'] }]);
   check('доступ к записи: администратор может всё', (await canAccessRecord(admin, a1.id, 'read')) && (await canAccessRecord(admin, a1.id, 'update')));
   check('доступ к записи: читатель читает, но не меняет', (await canAccessRecord(reader, a1.id, 'read')) && !(await canAccessRecord(reader, a1.id, 'update')));
   check('доступ к записи: «только свои» не открывает чужую запись, но открывает свою', !(await canAccessRecord(own, a1.id, 'read')) && (await canAccessRecord(own, (await createRecord(P, order.key, { title: 'Своя для вложений' }, own)).id, 'update')));
