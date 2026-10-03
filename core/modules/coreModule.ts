@@ -1,4 +1,4 @@
-import { Activity, Boxes, KeyRound, Puzzle, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2, Workflow } from 'lucide-react';
+import { Activity, Boxes, KeyRound, Plug, Puzzle, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2, Workflow } from 'lucide-react';
 import { CORE_PERMISSIONS } from '../auth/permissions';
 import type { ModuleManifest } from './types';
 
@@ -38,6 +38,7 @@ export const coreModule: ModuleManifest = {
         { key: 'processes', label: 'Процессы', href: '/settings/processes', permission: 'processes.manage' },
         { key: 'plugins', label: 'Плагины', href: '/settings/plugins', permission: 'settings.manage' },
         { key: 'bus', label: 'Шина', href: '/settings/bus', permission: 'settings.manage' },
+        { key: 'api', label: 'Доступ к API', href: '/settings/api', permission: 'api.manage' },
       ],
     },
     {
@@ -122,6 +123,15 @@ export const coreModule: ModuleManifest = {
       icon: Puzzle,
       permission: 'settings.manage',
       order: 80,
+    },
+    {
+      key: 'api',
+      title: 'Доступ к API',
+      description: 'Токены для внешних программ и скриптов, описание API',
+      href: '/settings/api',
+      icon: Plug,
+      permission: 'api.manage',
+      order: 90,
     },
   ],
 };

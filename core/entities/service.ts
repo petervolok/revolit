@@ -794,6 +794,18 @@ export async function listRecords(programId: string, templateKey: string, limit?
   return rows.map((r) => sanitizeRecord(toRecordDef(r), access));
 }
 
+/** Одна запись для сотрудника: с проверкой права на просмотр и области «только свои», без скрытых полей */
+export async function getRecordFor(programId: string, templateKey: string, id: string, viewer?: ViewerUser): Promise<EntityRecordDef> {
+  const template = await prisma.entityTemplate.findUnique({ where: { programId_key: { programId, key: templateKey } } });
+  if (!template) throw new EntityError('Сущность не найдена');
+  const access = await accessOf(viewer, template.id);
+  assertAccess(access, 'read');
+  const row = await prisma.entityRecord.findFirst({ where: { id, templateId: template.id, programId } });
+  if (!row) throw new EntityError('Запись не найдена');
+  assertCanTouchRecord(access, row);
+  return sanitizeRecord(toRecordDef(row), access);
+}
+
 /** Предел числа записей, которые сервер просматривает при поиске и сортировке одной сущности */
 export const QUERY_SCAN_LIMIT = 50_000;
 

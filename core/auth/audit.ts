@@ -13,6 +13,8 @@ export type AuditAction =
   | 'user.created'
   | 'user.updated'
   | 'user.deactivated'
+  | 'api_token.created'
+  | 'api_token.revoked'
   | 'role.created'
   | 'role.updated'
   | 'role.deleted'
