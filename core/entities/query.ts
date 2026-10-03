@@ -145,6 +145,12 @@ function compare(a: unknown, b: unknown, type: EntityFieldDef['type'] | 'system'
   return String(x).localeCompare(String(y), 'ru');
 }
 
+/** Подходит ли запись под все условия (для автоматизаций и других мест, где нужна проверка одной записи) */
+export function recordMatches(record: EntityRecordDef, fields: EntityFieldDef[], filters: RecordFilter[]): boolean {
+  const byKey = new Map(fields.map((f) => [f.key, f]));
+  return filters.every((f) => matchFilter(record, f, byKey));
+}
+
 /** Отбор по поиску и фильтрам, сортировка, страница. Неизвестные поля в фильтре и сортировке — ошибка */
 export function applyQuery(records: EntityRecordDef[], fields: EntityFieldDef[], query: RecordQuery): RecordPage {
   const byKey = new Map(fields.map((f) => [f.key, f]));

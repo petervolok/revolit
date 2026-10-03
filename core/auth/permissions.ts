@@ -8,6 +8,7 @@ export const CORE_PERMISSIONS: PermissionContribution[] = [
   { key: 'roles.view', label: 'Просмотр ролей и их прав', group: 'Сотрудники и доступ' },
   { key: 'roles.manage', label: 'Создание и изменение ролей', group: 'Сотрудники и доступ' },
   { key: 'settings.manage', label: 'Изменение настроек программы', group: 'Программа' },
+  { key: 'automations.manage', label: 'Автоматизации: правила «событие → действие» и их журнал', group: 'Данные' },
   { key: 'api.manage', label: 'Токены доступа к API: выпуск и отзыв', group: 'Программа' },
   { key: 'audit.view', label: 'Просмотр журнала действий', group: 'Программа' },
   // Одно право на всё: конструктора ролей ещё нет, право на конкретную
@@ -24,6 +25,7 @@ export type CorePermission =
   | 'roles.manage'
   | 'settings.manage'
   | 'api.manage'
+  | 'automations.manage'
   | 'audit.view'
   | 'entities.manage'
   | 'processes.manage';

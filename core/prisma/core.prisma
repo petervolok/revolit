@@ -13,6 +13,7 @@ model Program {
   moduleToggles   ModuleToggle[]
   aiKeyGroups     AiKeyGroup[]
   apiTokens       ApiToken[]
+  automations     Automation[]
 }
 
 // Роль = рабочее место. Описывается в конструкторе, назначается людям в самой программе.
@@ -514,4 +515,49 @@ model ScheduledJob {
   updatedAt      DateTime  @updatedAt
 
   @@unique([programId, key])
+}
+
+// Автоматизация (строка 8 таблицы покрытия): «когда случилось X и выполнено условие — сделать Y».
+// Описывается данными, поэтому настраивается в интерфейсе без правки кода и пересборки.
+model Automation {
+  id          String   @id @default(cuid())
+  programId   String
+  program     Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  enabled     Boolean  @default(true)
+  // Кто создал: от его имени заводятся задачи
+  createdById String?
+  // { type: record.created | record.updated | record.deleted | schedule, templateKey?, cron? }
+  trigger     Json
+  // Условия по данным записи (те же операции, что в фильтрах списка)
+  conditions  Json     @default("[]")
+  // Действия по порядку: set_fields, create_record, create_task, send_email, webhook
+  actions     Json
+  runCount    Int      @default(0)
+  lastRunAt   DateTime?
+  lastStatus  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs AutomationRun[]
+
+  @@index([programId, enabled])
+}
+
+// Журнал срабатываний автоматизации: что случилось, чем кончилось, по шагам
+model AutomationRun {
+  id           String     @id @default(cuid())
+  automationId String
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  programId    String
+  // ok | error | skipped
+  status       String
+  startedAt    DateTime   @default(now())
+  durationMs   Int        @default(0)
+  recordId     String?
+  message      String?
+  steps        Json       @default("[]")
+
+  @@index([automationId, startedAt])
 }

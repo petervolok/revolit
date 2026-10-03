@@ -1,4 +1,4 @@
-import { Activity, Boxes, KeyRound, Plug, Puzzle, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2, Workflow } from 'lucide-react';
+import { Activity, Boxes, KeyRound, Plug, Puzzle, Zap, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, UserRound, Users2, Workflow } from 'lucide-react';
 import { CORE_PERMISSIONS } from '../auth/permissions';
 import type { ModuleManifest } from './types';
 
@@ -39,6 +39,7 @@ export const coreModule: ModuleManifest = {
         { key: 'plugins', label: 'Плагины', href: '/settings/plugins', permission: 'settings.manage' },
         { key: 'bus', label: 'Шина', href: '/settings/bus', permission: 'settings.manage' },
         { key: 'api', label: 'Доступ к API', href: '/settings/api', permission: 'api.manage' },
+        { key: 'automations', label: 'Автоматизации', href: '/settings/automations', permission: 'automations.manage' },
       ],
     },
     {
@@ -132,6 +133,15 @@ export const coreModule: ModuleManifest = {
       icon: Plug,
       permission: 'api.manage',
       order: 90,
+    },
+    {
+      key: 'automations',
+      title: 'Автоматизации',
+      description: 'Правила «событие → условие → действия», работают сами',
+      href: '/settings/automations',
+      icon: Zap,
+      permission: 'automations.manage',
+      order: 100,
     },
   ],
 };

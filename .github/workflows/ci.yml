@@ -173,6 +173,11 @@ jobs:
         env:
           DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
 
+      - name: Проверка автоматизаций (события, условия, действия, вебхук, защита от зацикливания, расписание)
+        run: npx tsx tools/automations-smoke.ts
+        env:
+          DATABASE_URL: postgresql://revolit:revolit@localhost:5432/revolit
+
       # Сквозная проверка двух серверов (Р-45): настоящие агенты №1 и №2, две базы, одна шина
       - name: Вторая база для сквозной проверки
         run: |
