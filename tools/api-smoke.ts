@@ -154,7 +154,7 @@ async function main(): Promise<void> {
   const noAuth = await getEntities(req('/entities', null));
   const noAuthBody = await json(noAuth);
   check('без заголовка — 401 unauthorized и WWW-Authenticate', noAuth.status === 401 && noAuthBody.error.code === 'unauthorized' && noAuth.headers.get('www-authenticate') === 'Bearer');
-  const badAuth = await getEntities(req('/entities', 'rvl_неверный'));
+  const badAuth = await getEntities(req('/entities', 'rvl_wrong-token'));
   check('неверный токен — 401 invalid_token', badAuth.status === 401 && (await json(badAuth)).error.code === 'invalid_token');
   const cookieOnly = await getEntities(req('/entities', null, { headers: { cookie: 'session=что-угодно' } }));
   check('cookie сессии по этому адресу не принимается', cookieOnly.status === 401);
